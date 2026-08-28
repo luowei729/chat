@@ -1,0 +1,16 @@
+Options -Indexes
+RewriteEngine On
+
+# 静态资源直接访问（上传文件、JS等）
+RewriteCond %{REQUEST_FILENAME} -f
+RewriteRule ^ - [L]
+
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+
+# 将 /任意ID 路由到 index.php，PATH_INFO 传递 ID
+# 例如 /1  /abc  /my-room 都会映射到 index.php
+RewriteRule ^([a-zA-Z0-9_.\-]+)/?$ index.php/$1 [L,QSA]
+
+# 根路径也走 index.php（会自动生成新 ID 并跳转）
+RewriteRule ^$ index.php [L,QSA]

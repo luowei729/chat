@@ -1,0 +1,14 @@
+{
+  "name": "voice-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "WebSocket 信令后端，支持手机浏览器实时语音",
+  "main": "voice-server.js",
+  "scripts": {
+    "start": "node voice-server.js",
+    "dev": "node voice-server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

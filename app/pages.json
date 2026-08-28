@@ -1,0 +1,40 @@
+{
+  // 页面路由：HBuilderX 依此生成原生导航
+  "pages": [
+    {
+      "path": "pages/index/index",
+      "style": {
+        "navigationBarTitleText": "chat",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/chat/chat",
+      "style": {
+        "navigationBarTitleText": "聊天室",
+        "navigationStyle": "custom",
+        // web-view 页需要全屏，避免原生导航栏遮挡
+        "app-plus": {
+          "titleNView": false
+        }
+      }
+    }
+  ],
+  "globalStyle": {
+    "navigationBarTextStyle": "white",
+    "navigationBarTitleText": "chat",
+    "navigationBarBackgroundColor": "#1B3068",
+    "backgroundColor": "#EEF1FB",
+    "app-plus": {
+      "background": "#EEF1FB"
+    }
+  },
+  "tabBar": {
+    "list": []
+  },
+  "uniIdRouter": {
+    "loginPage": "pages/index/index",
+    "needLogin": [],
+    "resToLogin": true
+  }
+}

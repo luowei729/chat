@@ -1,0 +1,13 @@
+/* uni.scss — 全局 SCSS 变量，供所有页面复用 */
+// 原因：统一品牌色与圆角，保持与线上站（#1B3068 / #4F6EF7）一致
+
+$primary: #4f6ef7;
+$primary-dark: #3b55d9;
+$header-from: #1b3068;
+$header-to: #2d5bb5;
+$bg: #eef1fb;
+$border: #e3e8f7;
+$text-main: #1a1f36;
+$text-muted: #8892b0;
+$radius: 18px;
+$radius-pill: 999px;

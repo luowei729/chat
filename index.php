@@ -36,6 +36,13 @@ define('TURNSTILE_COOKIE_SECRET', '9f3b7c2a6e1d4a8b0c5f9jkhd43jh4j6h5jk6h43jkg5h
 // 调试开关：开启后验证失败会显示 Cloudflare 返回的 error-codes，方便定位；正式使用也可以保持 true，不会显示 Secret Key。
 define('TURNSTILE_DEBUG_ERROR', true);
 
+// ========== App 免验证 Token（供 Android/iOS/HarmonyOS App 壳使用） ==========
+// 原因：Cloudflare Turnstile 在 App 内嵌 WebView 中可能加载失败，App 通过 Header 或 URL 携带此 Token 时跳过人机验证
+// 生成方式：openssl rand -hex 32
+// 使用：请求头 X-App-Token: <值> 或 URL ?app_token=<值>，均可
+// 安全：此 Token 等同于 Turnstile 验证通过，请妥善保管，泄露后请立即更换
+define('APP_TOKEN', 'c2a8f1d9e4b603a7f8e2c9d1b6a4e0f8735d2c1e9a8b7f0d6c3e2a1b9f8d7e6c5a2b4');
+
 // 创建必要的目录
 if (!file_exists(CHAT_DIR)) {
     mkdir(CHAT_DIR, 0777, true);
@@ -366,7 +373,30 @@ function buildTurnstileCookieValue($expires) {
     return base64UrlEncode($payload . '|' . $sig);
 }
 
+// App Token 检测：Header 优先，其次 URL 参数，其次 cookie（App 内携带）
+// 原因：App WebView 可能被 Cloudflare 拦截，携带此 Token 视为已验证，直接跳过 Turnstile
+function hasValidAppToken() {
+    // 兼容不同服务器对 Header 的大小写/下划线处理
+    $sent = '';
+    if (!empty($_SERVER['HTTP_X_APP_TOKEN'])) $sent = trim($_SERVER['HTTP_X_APP_TOKEN']);
+    elseif (!empty($_SERVER['HTTP_X_APP_TOKEN_LOWER'])) $sent = trim($_SERVER['HTTP_X_APP_TOKEN_LOWER']);
+    elseif (function_exists('getallheaders')) {
+        $hs = getallheaders();
+        if ($hs) foreach ($hs as $k => $v) if (strtolower($k) === 'x-app-token') { $sent = trim($v); break; }
+    }
+    if ($sent === '' && !empty($_GET['app_token'])) $sent = trim($_GET['app_token']);
+    if ($sent === '' && !empty($_POST['app_token'])) $sent = trim($_POST['app_token']);
+    if ($sent === '' && !empty($_COOKIE['app_token'])) $sent = trim($_COOKIE['app_token']);
+    if ($sent === '') return false;
+    // 常量未配置时不启用白名单
+    if (!defined('APP_TOKEN') || APP_TOKEN === '' || strpos(APP_TOKEN, '请') !== false) return false;
+    // 使用 hash_equals 防时序攻击
+    return hash_equals(APP_TOKEN, $sent);
+}
+
 function hasValidTurnstileCookie() {
+    // App Token 视为已验证
+    if (hasValidAppToken()) return true;
     if (!TURNSTILE_ENABLED) return true;
     if (empty($_COOKIE[TURNSTILE_COOKIE_NAME])) return false;
 

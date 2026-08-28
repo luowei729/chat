@@ -1,0 +1,26 @@
+{
+  "name": "lkz-chat-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "chat - 三端App (Android/iOS/HarmonyOS NEXT) - uni-app Vue3",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:h5": "vite",
+    "dev:app": "vite",
+    "build": "vite build",
+    "build:h5": "vite build",
+    "build:app": "vite build"
+  },
+  "dependencies": {
+    "@dcloudio/uni-app": "^3.0.0",
+    "@dcloudio/uni-components": "^3.0.0",
+    "vue": "^3.4.0"
+  },
+  "devDependencies": {
+    "@dcloudio/types": "^3.4.8",
+    "@dcloudio/uni-automator": "^3.0.0",
+    "@dcloudio/vite-plugin-uni": "^3.0.0",
+    "vite": "^5.2.0"
+  }
+}

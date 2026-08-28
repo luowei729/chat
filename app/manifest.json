@@ -1,0 +1,92 @@
+{
+  // ========== 应用基础信息 ==========
+  // 名称会显示在手机桌面上
+  "name": "chat",
+  "appid": "__UNI__3EF83D0",
+  "description": "chat - 轻量文件安全传输，支持文字/文件/语音/实时通话",
+  "versionName": "1.0.0",
+  "versionCode": "100",
+  "transformPx": false,
+  // Vue 版本：必须为 3，适配 uni-app x/Vue3
+  "vueVersion": "3",
+  // ========== App 原生配置（Android + iOS） ==========
+  "app-plus": {
+    "usingComponents": true,
+    "nvueStyleCompiler": "uni-app",
+    "compilerVersion": 3,
+    // 启动图配置（可替换为自定义图片）
+    "splashscreen": {
+      "alwaysShowBeforeRender": true,
+      "waiting": true,
+      "autoclose": true,
+      "delay": 0
+    },
+    "modules": {},
+    "distribute": {
+      "android": {
+        // 安卓包名，请替换为你自己的反向域名
+        "packagename": "pub.lkz.chat",
+        // 权限声明：按需最小化，已按聊天功能所需声明
+        "permissions": [
+          "<uses-permission android:name=\"android.permission.INTERNET\" />",
+          "<uses-permission android:name=\"android.permission.RECORD_AUDIO\" />",
+          "<uses-permission android:name=\"android.permission.CAMERA\" />",
+          "<uses-permission android:name=\"android.permission.READ_MEDIA_IMAGES\" />",
+          "<uses-permission android:name=\"android.permission.READ_MEDIA_VIDEO\" />",
+          "<uses-permission android:name=\"android.permission.READ_MEDIA_AUDIO\" />",
+          "<uses-permission android:name=\"android.permission.WRITE_EXTERNAL_STORAGE\" />",
+          "<uses-permission android:name=\"android.permission.MODIFY_AUDIO_SETTINGS\" />"
+        ]
+      },
+      "ios": {
+        // iOS Bundle ID，需与 Apple 后台一致
+        "dSYMs": false
+      },
+      "sdkConfigs": {
+        // 如需推送/统计等在此配置
+      },
+      "icons": {
+        "android": {
+          "hdpi": "static/logo.png",
+          "xhdpi": "static/logo.png",
+          "xxhdpi": "static/logo.png",
+          "xxxhdpi": "static/logo.png"
+        },
+        "ios": {
+          "appstore": "static/logo.png"
+        }
+      }
+    }
+  },
+  // ========== 鸿蒙 NEXT 配置 ==========
+  // HBuilderX 4.2+ 识别此节点后可勾选 app-harmony 打包
+  "app-harmony": {
+    // 鸿蒙包名，需与华为 AGC 后台一致
+    "bundleName": "pub.lkz.chat",
+    "minAPIVersion": 12,
+    "targetAPIVersion": 12,
+    // abilities 会由 HBuilderX 云打包自动生成，无需手写 module.json5
+    "abilities": []
+  },
+  // ========== H5 配置 ==========
+  "h5": {
+    "title": "chat",
+    "template": "index.html",
+    "router": {
+      "mode": "hash",
+      "base": "./"
+    }
+  },
+  // 统计开关（默认关闭，避免多余请求）
+  "uniStatistics": {
+    "enable": false
+  },
+  "quickapp": {},
+  "mp-weixin": {
+    "appid": "",
+    "setting": {
+      "urlCheck": false
+    },
+    "usingComponents": true
+  }
+}

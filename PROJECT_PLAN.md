@@ -55,4 +55,6 @@ Ubuntu 22.04 / PHP + Apache / Node 22.23.2（2026-08-28 已从 12.22.9 升级，
 - [ ] HBuilderX 云打包验证三端安装（需上传 Apple/华为证书后执行）
 - [ ] Phase 1/2 渐进原生化（按需）
 
+- [x] 修复 `git push` 超时：DNS 切公网 `223.5.5.5/8.8.8.8/1.1.1.1` 并双重持久化（resolved + netplan），验证 `push 45be457..15951c0` 成功（2026-08-28 17:56）
+
 *本文档精简，详细 App 规划见 `docs/APP_PLAN.md`，App 使用说明见 `app/README.md`。*

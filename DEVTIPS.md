@@ -20,3 +20,9 @@
 - 鸿蒙：manifest.json 需 app-harmony 节 bundleName pub.lkz.chat minAPIVersion 12，HBuilderX 4.2+ 才可见 app-harmony 勾选
 - Node：已从 **12.22.9 升级至 22.23.2**（2026-08-28 nodesource 22.x --force-overwrite，systemd voice-server 重启 curl /health→ok 验证，兼容无改动；原写 12 EOL/18+ 要求已满足）
 - 代码注释：App 内所有 Vue/JS 均需中文注释说明实现原因
+
+## 四、网络与运维铁律（2026-08-28 17:56 北京时间，新增）
+- DNS 固定：阿里云默认内网 DNS `100.100.2.136/138` 曾导致 `git push` 长连接 `443` 超时（`134601ms`），已强制切公网 `223.5.5.5/8.8.8.8/1.1.1.1/119.29.29.29`；持久化两处：`systemd-resolved` drop-in `/etc/systemd/resolved.conf.d/custom-dns.conf` 与 `netplan /etc/netplan/99-custom-dns.yaml (use-dns:false)`，`resolv.conf` 保持 `stub` 软链勿改静态文件
+- 排查套路：`resolvectl status` 看 `Current DNS Server` → `dig/github.com +short` → `GIT_CURL_VERBOSE=1 git ls-remote` 看 TLS/HTTP2 是否复用连接 → `git push` 单独重测；`curl -I https://github.com` 能通不代表 `git send-pack POST` 能通
+- hosts：缺 `127.0.1.1 ubuntu` 会使所有 `sudo` 报 `unable to resolve host`，已补齐
+- 重启后必查：`resolvectl status | grep DNS` 与 `cat /etc/hosts`，避免 cloud-init 覆盖

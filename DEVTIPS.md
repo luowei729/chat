@@ -64,3 +64,29 @@
 - 验证码只存 HMAC 哈希，不存明文（6 位数字不加密钥等于明文）。
 - 附件内容寻址存储（sha256 路径），相同文件只存一份。
 - 所有时间存 bigint 毫秒时间戳，跨时区无歧义。
+
+## 九、Lynx 构建与黑屏排查（2026-10-29 15:55 北京时间，实战验证）
+
+- **黑屏第一大坑：缺 `pluginReactLynx()`**
+  - Rspeedy 内置 `pluginLynx`（生成 `.bundle`），但**不内置** `@lynx-js/react-rsbuild-plugin`
+  - 缺它时 `rspeedy build` 会「成功」，但产物只是普通 webpack JS（`dist/static/js/main.*.js`），
+    Lynx 加载不到模板 → 黑屏
+  - 必须装 `@lynx-js/react-rsbuild-plugin` 并在 `lynx.config.ts` 的 `plugins` 里注册
+  - 正确产物：`dist/chat.lynx.bundle`（二进制 Lepus 模板，头部 `0.2.0.0` + 版本号）
+
+- **黑屏第二大坑：根节点用 `<view>` 而非 `<page>`**
+  - Lynx 的 `<page>` 提供全屏高度参照
+  - 用 `<view style={{height:'100%'}}>` 会因无父高度参照而塌陷为 0 → 黑屏
+  - 所有页面最外层必须是 `<page>`，内部再用 `<view>`
+
+- **必须 `output.dataUriLimit: Infinity`**：Lynx 不支持用 URL 加载本地资源，图片要内联
+
+- **APK 体积**：WebRTC 的 `libjingle_peerconnection_so.so` 单架构 6-12MB、`liblynx.so` 6-7MB
+  - 打全 4 架构 = 109MB；只打 `arm64-v8a + armeabi-v7a` = 50MB
+  - 模拟器调试用 `-PabiFilters=x86_64` 覆盖
+
+- **黑屏排查套路**：
+  1. `unzip -l app.apk | grep assets/` 确认 bundle 真的打进去了
+  2. `head -c 20 bundle` 看是否二进制模板（`b\xb6"$0.2.0.0`），若是 `(()=>{` 说明是纯 JS，配置错了
+  3. `adb logcat | grep -E "Lynx|MainActivity"` 看 bundle 加载字节数与渲染错误
+  4. MainActivity 已加 3 秒 `childCount==0` 检查，失败会显示可读错误而非黑屏

@@ -135,8 +135,9 @@ class MainActivity : AppCompatActivity() {
             setBackgroundColor(Color.parseColor("#101A2E"))
             setPadding(24, 24, 24, 24)
             typeface = android.graphics.Typeface.MONOSPACE
-            // 允许选中复制，方便用户反馈
-            isTextSelectable = true
+            // 允许选中复制，方便用户反馈。
+            // 必须用 setTextIsSelectable()，Kotlin 里 isTextSelectable 是只读属性
+            setTextIsSelectable(true)
         }
 
         diagPanel = ScrollView(this).apply {

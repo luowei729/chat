@@ -79,6 +79,14 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    /**
+     * AGP 8 起 BuildConfig 默认关闭，必须显式开启。
+     * 代码里用 BuildConfig.DEBUG 判断调试模式，不开会编译失败。
+     */
+    buildFeatures {
+        buildConfig = true
+    }
+
     kotlinOptions {
         jvmTarget = "17"
     }

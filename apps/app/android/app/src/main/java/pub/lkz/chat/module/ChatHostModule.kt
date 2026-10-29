@@ -4,13 +4,15 @@ import android.content.Context
 import com.lynx.jsbridge.LynxMethod
 import com.lynx.jsbridge.LynxModule
 import com.lynx.react.bridge.Callback
+import com.lynx.react.bridge.JavaOnlyMap
+import pub.lkz.chat.ChatApplication
 import pub.lkz.chat.MainActivity
 import pub.lkz.chat.call.CallService
 
 /**
  * ============================================================
  * 宿主能力原生模块（ChatHost）
- * ------------------------------------------------------------
+ * ============================================================
  * 为什么需要它：
  * 1. **返回键**：Lynx 没有提供「当前是否可返回」的同步查询，
  *    必须由前端主动告诉原生「我现在在根页面吗」，
@@ -19,18 +21,28 @@ import pub.lkz.chat.call.CallService
  * 3. **通话前台服务**：锁屏保活必须由原生启动 Service，
  *    前端无法直接操作；
  * 4. **平台信息**：前端需要知道运行平台做能力降级。
-
+ *
  * 前端调用方式（ReactLynx）：
  *   const host = NativeModules.ChatHost;
  *   host.setCanGoBack(routeStack.length > 1);
  *   host.exitApp();
  *   host.startCallService();
+ *   host.getPlatformInfo((info) => { ... });
  *
- * 注意：所有方法必须加 @LynxMethod 注解，否则前端调不到。
- * 线程：Lynx 会在后台线程调用这些方法，涉及 UI 的操作必须切主线程。
+ * 注意：
+ * - 所有方法必须加 @LynxMethod 注解，否则前端调不到；
+ * - Lynx 会在后台线程调用这些方法，涉及 UI 的操作必须切主线程；
+ * - 必须同时提供 (Context) 与 (Context, Any?) 两个构造函数，
+ *   因为 Lynx 内部可能用任一签名实例化模块。
  * ============================================================
  */
-class ChatHostModule(context: Context) : LynxModule(context) {
+class ChatHostModule : LynxModule {
+
+    /** 单参构造：Lynx 默认实例化方式 */
+    constructor(context: Context) : super(context)
+
+    /** 双参构造：带模块参数的实例化方式 */
+    constructor(context: Context, param: Any?) : super(context, param)
 
     companion object {
         /**
@@ -87,17 +99,20 @@ class ChatHostModule(context: Context) : LynxModule(context) {
     /**
      * 获取平台信息
      * 前端用它做能力判断（比如 Android 是否支持后台通话）
+     * 注意：必须用 JavaOnlyMap 而不是 Kotlin Map，
+     *      否则 Lynx 的桥接层无法正确序列化。
      */
     @LynxMethod
     fun getPlatformInfo(callback: Callback) {
-        val info = mapOf(
-            "platform" to "android",
-            "sdkInt" to android.os.Build.VERSION.SDK_INT,
-            "model" to android.os.Build.MODEL,
-            "webRtcReady" to pub.lkz.chat.ChatApplication.webRtcReady,
-            "manufacturer" to android.os.Build.MANUFACTURER.lowercase(),
+        val info = JavaOnlyMap.from(
+            mapOf(
+                "platform" to "android",
+                "sdkInt" to android.os.Build.VERSION.SDK_INT,
+                "model" to android.os.Build.MODEL,
+                "manufacturer" to android.os.Build.MANUFACTURER.lowercase(),
+                "webRtcReady" to ChatApplication.webRtcReady,
+            ),
         )
-        // Lynx 的 Callback 用 invoke 回传，参数需为可序列化对象
         callback.invoke(info)
     }
 

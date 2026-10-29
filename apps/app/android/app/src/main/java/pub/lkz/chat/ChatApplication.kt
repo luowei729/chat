@@ -76,7 +76,9 @@ class ChatApplication : Application() {
         // 注册图片加载服务
         LynxServiceCenter.inst().registerService(LynxImageService.getInstance())
         // 注册日志服务：前端 console.log 会输出到 Logcat（tag: Lynx）
-        LynxServiceCenter.inst().registerService(LynxLogService.INSTANCE)
+        // 注意：LynxLogService 是 Kotlin object，Kotlin 里直接引用对象名，
+        //      不能写 .INSTANCE（那是 Java 侧的访问方式）
+        LynxServiceCenter.inst().registerService(LynxLogService)
     }
 
     /** 初始化 Lynx 引擎（必须在创建 LynxView 之前） */

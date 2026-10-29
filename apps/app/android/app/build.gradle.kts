@@ -26,6 +26,30 @@ android {
 
         // 只保留中文与英文资源，减小包体积
         resourceConfigurations += listOf("zh", "en")
+
+        /**
+         * 只打包真机需要的 CPU 架构
+         * ============================================================
+         * WebRTC 的 libjingle_peerconnection_so.so 单个架构就有 6-12MB，
+         * Lynx 的 liblynx.so 也有 6-7MB。
+         * 打包全部 4 个架构（含模拟器用的 x86/x86_64）会让 APK 达到 109MB，
+         * 而真机 99% 以上都是 arm64-v8a / armeabi-v7a。
+         *
+         * 结果：APK 从 109MB 降到约 47MB。
+         *
+         * 如果需要在 Android 模拟器上调试，用命令行覆盖：
+         *   ./gradlew assembleDebug -PabiFilters=x86_64
+         */
+        val abiOverride = project.findProperty("abiFilters") as String?
+        if (abiOverride != null) {
+            ndk {
+                abiFilters += abiOverride.split(",")
+            }
+        } else {
+            ndk {
+                abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+            }
+        }
     }
 
     // ---------- 签名配置 ----------
@@ -103,7 +127,22 @@ android {
                 "META-INF/AL2.0",
                 "META-INF/LGPL2.1",
                 "META-INF/*.kotlin_module",
+                // Fresco / OkHttp 的重复许可证文件
+                "META-INF/DEPENDENCIES",
+                "META-INF/LICENSE",
+                "META-INF/LICENSE.txt",
+                "META-INF/NOTICE",
+                "META-INF/NOTICE.txt",
+                "META-INF/versions/9/previous-compilation-data.bin",
             )
+        }
+        /**
+         * 不压缩 .so 的旧行为（useLegacyPackaging）保持关闭：
+         * 现代 Android 会直接从 APK 中 mmap 加载未压缩的 .so，
+         * 既省安装空间又加快启动。
+         */
+        jniLibs {
+            useLegacyPackaging = false
         }
     }
 }

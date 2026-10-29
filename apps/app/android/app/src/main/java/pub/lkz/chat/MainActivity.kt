@@ -93,6 +93,19 @@ class MainActivity : AppCompatActivity() {
 
         // 加载 bundle（第二个参数是初始数据 JSON 字符串，空串表示不传）
         lynxView.renderTemplateUrl(BUNDLE_NAME, "")
+
+        /**
+         * 渲染健康检查
+         * 说明：Lynx 渲染失败时不会抛异常，只会留一片黑屏。
+         * 这里延迟 3 秒检查 LynxView 是否真的挂上了子视图，
+         * 没有就显示可读的错误提示，避免用户只看到黑屏。
+         */
+        lynxView.postDelayed({
+            if (lynxView.childCount == 0) {
+                android.util.Log.e("MainActivity", "LynxView 无子视图，渲染可能失败")
+                showFatalError("页面渲染失败\n请查看日志或重新安装应用")
+            }
+        }, 3000)
     }
 
     /**
@@ -115,9 +128,15 @@ class MainActivity : AppCompatActivity() {
                 Thread {
                     try {
                         val bytes = assets.open(uri).use { it.readBytes() }
+                        android.util.Log.i("MainActivity", "bundle 加载成功: $uri, ${bytes.size} 字节")
                         callback.onSuccess(bytes)
                     } catch (e: IOException) {
-                        // bundle 缺失属于打包错误，明确上报便于定位
+                        // bundle 缺失属于打包错误，必须让用户看到原因，
+                        // 否则界面上只会是一片黑屏，完全无法排查
+                        android.util.Log.e("MainActivity", "bundle 加载失败: $uri", e)
+                        runOnUiThread {
+                            showFatalError("找不到内置页面包 $uri\n请重新安装应用")
+                        }
                         callback.onFailed(e.message ?: "读取 bundle 失败")
                     }
                 }.start()
@@ -201,6 +220,32 @@ class MainActivity : AppCompatActivity() {
             lynxView.sendGlobalEvent("hardwareBack", args)
         } catch (e: Throwable) {
             android.util.Log.w("MainActivity", "发送返回事件失败", e)
+        }
+    }
+
+    /**
+     * 展示致命错误（覆盖在 LynxView 之上）
+     * 说明：黑屏是最难排查的故障，必须让错误可见。
+     */
+    private fun showFatalError(message: String) {
+        try {
+            val tv = android.widget.TextView(this).apply {
+                text = message
+                setTextColor(android.graphics.Color.parseColor("#ff4d4f"))
+                textSize = 14f
+                gravity = android.view.Gravity.CENTER
+                setPadding(48, 48, 48, 48)
+            }
+            val root = findViewById<ViewGroup>(android.R.id.content)
+            root.addView(
+                tv,
+                ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                ),
+            )
+        } catch (e: Throwable) {
+            android.util.Log.e("MainActivity", "展示错误信息失败", e)
         }
     }
 

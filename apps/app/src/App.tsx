@@ -175,27 +175,46 @@ export function App() {
 
   /* ---------------- 渲染 ---------------- */
   if (!auth.bootstrapped) {
+    // 注意：根节点必须是 <page>，Lynx 用它提供全屏高度参照，
+    // 用 <view> 会导致 height:100% 塌陷为 0（表现为黑屏）
     return (
-      <view style={commonStyles.center}>
-        <text style={{ color: colors.textMuted, fontSize: fontSize.md }}>加载中…</text>
-      </view>
+      <page style={pageStyle}>
+        <view style={commonStyles.center}>
+          <text style={{ color: colors.textMuted, fontSize: fontSize.md }}>加载中…</text>
+        </view>
+      </page>
     );
   }
 
   if (bootError) {
     return (
-      <view style={commonStyles.center}>
-        <text style={{ color: colors.danger, fontSize: fontSize.md }}>{bootError}</text>
-      </view>
+      <page style={pageStyle}>
+        <view style={commonStyles.center}>
+          <text style={{ color: colors.danger, fontSize: fontSize.md }}>{bootError}</text>
+        </view>
+      </page>
     );
   }
 
   return (
-    <view style={commonStyles.page}>
+    <page style={pageStyle}>
       {renderRoute(route.name, route.params)}
-    </view>
+    </page>
   );
 }
+
+/**
+ * 根 page 样式
+ * 说明：Lynx 的 <page> 默认全屏，但显式声明高度更稳妥，
+ *      同时统一背景色，避免启动瞬间闪白。
+ */
+const pageStyle = {
+  width: '100%',
+  height: '100%',
+  backgroundColor: colors.bg,
+  display: 'flex',
+  flexDirection: 'column',
+} as const;
 
 /** 路由 → 页面组件 */
 function renderRoute(name: string, params?: Record<string, unknown>) {

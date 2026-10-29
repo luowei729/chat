@@ -1,18 +1,23 @@
 /**
  * ============================================================
  * Rspeedy 构建配置（Lynx 官方工具链）
+ * ============================================================
+ * 关键：必须注册 pluginReactLynx()
  * ------------------------------------------------------------
- * 产物说明：
- *   dist/main.lynx.bundle —— Lynx 客户端包（Android/iOS/Harmony 共用）
- *   dist/main.web.bundle  —— Web 端包（配合 @lynx-js/web-core 运行）
+ * Rspeedy 内置了 pluginLynx（生成 .bundle 模板文件），
+ * 但**没有内置 pluginReactLynx**（React JSX → Lynx 元素的编译转换）。
  *
- * 为什么用 Rspeedy 而不是自己配 Rspack：
- * 1. 它内置了 Lynx 双线程模型（主线程 + 后台线程）的拆分规则；
- * 2. 自动处理 @lynx-js/react 的编译转换（JSX → Lynx 元素）；
- * 3. 官方维护，Lynx 版本升级时无需自己改配置。
+ * 缺少 pluginReactLynx 时的症状：
+ *   构建"成功"，但产物只是普通 webpack JS，
+ *   没有 .bundle 模板文件，App 装上后 Lynx 加载不到模板 → 黑屏。
+ *
+ * 产物说明：
+ *   dist/main.lynx.bundle  ← Lynx 模板（JSON 格式，App 真正加载的文件）
+ *   dist/static/js/*.js    ← 模板引用的 JS 逻辑
  * ============================================================
  */
 
+import { pluginReactLynx } from '@lynx-js/react-rsbuild-plugin';
 import { defineConfig } from '@lynx-js/rspeedy';
 
 export default defineConfig({
@@ -21,18 +26,32 @@ export default defineConfig({
     entry: './src/main.tsx',
   },
 
+  plugins: [
+    // React JSX → Lynx 元素转换（必需，缺失会黑屏）
+    pluginReactLynx(),
+  ],
+
   output: {
     // 产物目录
     distPath: {
       root: 'dist',
     },
-    // 文件名带 hash：便于区分版本，也方便 CDN 缓存
+    /**
+     * bundle 文件名：Lynx 模板文件
+     * [platform] 会被替换为 lynx / web，区分不同端的产物
+     */
     filename: {
-      bundle: '[name].[contenthash].lynx.bundle',
+      bundle: 'chat.lynx.bundle',
     },
+    /**
+     * 图片等资源内联为 data URI
+     * 原因：Lynx 运行时不支持通过 URL 加载本地资源，
+     *      所有资源必须内联进 bundle 或走网络 URL。
+     */
+    dataUriLimit: Infinity,
   },
 
-  // 开发服务器配置：真机通过 LynxView 扫码连接
+  // 开发服务器：真机通过 LynxView 扫码连接
   dev: {
     hmr: true,
     liveReload: true,

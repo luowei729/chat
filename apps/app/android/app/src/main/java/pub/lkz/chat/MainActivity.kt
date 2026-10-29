@@ -11,8 +11,8 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.lynx.tasm.LynxView
 import com.lynx.tasm.LynxViewBuilder
-import com.lynx.tasm.TemplateData
 import com.lynx.tasm.provider.AbsTemplateProvider
+import com.lynx.xelement.XElementBehaviors
 import java.io.IOException
 
 /**
@@ -22,12 +22,16 @@ import java.io.IOException
  * 职责：
  * 1. 创建 LynxView 并加载内置的 Lynx bundle；
  * 2. 申请运行时权限（麦克风、相机、通知）；
- * 3. 处理返回键（交给 Lynx 内部路由）。
+ * 3. 处理返回键（优先交给 Lynx 内部路由）。
  *
  * 为什么用内置 bundle 而不是远程 URL：
  * 1. 离线可用，弱网下也能秒开；
- * 2. 不受服务端发版影响，App 版本与前端代码绑定，行为可预期；
+ * 2. App 版本与前端代码绑定，行为可预期；
  * 3. 应用市场审核更容易通过（无动态加载代码的争议）。
+ *
+ * 必须用 AppCompatActivity + Theme.AppCompat 系主题：
+ * 用平台主题 Theme.Material.* 会抛
+ * "You need to use a Theme.AppCompat theme (or descendant) with this activity"。
  * ============================================================
  */
 class MainActivity : AppCompatActivity() {
@@ -48,7 +52,6 @@ class MainActivity : AppCompatActivity() {
         // 先申请权限，再创建界面：避免用户点录音时才发现没权限
         requestRuntimePermissions()
 
-        // ---------- 创建 LynxView ----------
         lynxView = createLynxView()
 
         // 用 FrameLayout 承载，方便后续叠加原生视图（如通话悬浮窗）
@@ -57,7 +60,7 @@ class MainActivity : AppCompatActivity() {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT,
             )
-            // 让内容延伸到状态栏下方（沉浸式），由前端自己加安全区内边距
+            // 内容延伸到状态栏下方（沉浸式），安全区由前端自己处理
             fitsSystemWindows = false
             addView(
                 lynxView,
@@ -70,55 +73,40 @@ class MainActivity : AppCompatActivity() {
 
         setContentView(container)
 
-        // ---------- 加载 bundle ----------
-        loadBundle()
+        // 加载 bundle（第二个参数是初始数据 JSON 字符串，空串表示不传）
+        lynxView.renderTemplateUrl(BUNDLE_NAME, "")
     }
 
     /**
      * 创建 LynxView
-     * 说明：
-     * - setTemplateProvider 负责从 assets 读取 bundle 字节流；
-     * - setImageFetcher / setFontLoader 等可选，未配置时用默认实现。
+     * 关键点：
+     * - addBehaviors(XElementBehaviors)：注册 input/webview/video 等原生组件，
+     *   不加会导致登录页的 <input> 完全不可用；
+     * - setTemplateProvider：从 assets 读取离线 bundle。
      */
     private fun createLynxView(): LynxView {
         val builder = LynxViewBuilder()
 
+        // 注册扩展元素（input / textarea / webview / video 等）
+        builder.addBehaviors(XElementBehaviors().create())
+
         // 从 assets 读取 bundle：这是「内置离线包」的关键
         builder.setTemplateProvider(object : AbsTemplateProvider() {
-            override fun loadTemplate(
-                uri: String,
-                callback: com.lynx.tasm.provider.LynxTemplateProvider.LoadTemplateCallback,
-            ) {
-                try {
-                    val bytes = assets.open(BUNDLE_NAME).use { it.readBytes() }
-                    callback.onSuccess(bytes)
-                } catch (e: IOException) {
-                    // bundle 缺失是打包错误，直接上报，避免白屏无提示
-                    callback.onFailed(e.message ?: "读取 bundle 失败", 404)
-                }
+            override fun loadTemplate(uri: String, callback: Callback) {
+                // 读文件必须放子线程，否则大 bundle 会卡主线程
+                Thread {
+                    try {
+                        val bytes = assets.open(uri).use { it.readBytes() }
+                        callback.onSuccess(bytes)
+                    } catch (e: IOException) {
+                        // bundle 缺失属于打包错误，明确上报便于定位
+                        callback.onFailed(e.message ?: "读取 bundle 失败")
+                    }
+                }.start()
             }
         })
 
-        // 开启调试：仅在 debug 包生效，release 包会自动关闭
-        if (BuildConfig.DEBUG) {
-            builder.setEnableDevtool(true)
-        }
-
         return builder.build(this)
-    }
-
-    /** 加载 bundle */
-    private fun loadBundle() {
-        // 传入初始数据：前端可在 useInitData() 中读取
-        val data = TemplateData.fromMap(
-            mapOf(
-                "platform" to "android",
-                "appVersion" to BuildConfig.VERSION_NAME,
-                "osVersion" to Build.VERSION.RELEASE,
-                "deviceModel" to Build.MODEL,
-            ),
-        )
-        lynxView.renderTemplateUrl(BUNDLE_NAME, data)
     }
 
     /**
@@ -159,7 +147,7 @@ class MainActivity : AppCompatActivity() {
      */
     @Deprecated("Android 13+ 推荐用 OnBackPressedDispatcher")
     override fun onBackPressed() {
-        // LynxView 提供 goBack，返回 true 表示已消费
+        // goBack 返回 true 表示 Lynx 已消费该事件
         val handled = lynxView.goBack()
         if (!handled) {
             super.onBackPressed()
@@ -168,7 +156,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
-        // 通知 Lynx 进入后台：前端可据此暂停动画、降低轮询频率
+        // 通知 Lynx 进入后台：前端可据此降低轮询频率
         lynxView.onEnterBackground()
     }
 

@@ -101,6 +101,8 @@ jobs:
       - name: 配置 Gradle 缓存
         uses: gradle/actions/setup-gradle@v4
         with:
+          # 让 action 把 gradle 命令装到 PATH，后面生成 wrapper 直接用
+          gradle-version: 8.7
           cache-read-only: false
 
       # ---------- 4. 解码签名证书（可选） ----------
@@ -113,19 +115,16 @@ jobs:
           echo "keystore 已准备"
 
       # ---------- 5. 生成 Gradle Wrapper ----------
-      # 仓库里不放 gradle-wrapper.jar（二进制），CI 用本机 gradle 生成
+      # 仓库里不放 gradle-wrapper.jar（二进制），CI 用 setup-gradle 提供的 gradle 生成
       - name: 生成 Gradle Wrapper
         working-directory: apps/app/android
         run: |
           set -euo pipefail
-          # 下载官方 gradle 用于生成 wrapper
-          GRADLE_VERSION=8.7
-          curl -sSL -o /tmp/gradle.zip \
-            "https://mirrors.cloud.tencent.com/gradle/gradle-${GRADLE_VERSION}-bin.zip"
-          unzip -q /tmp/gradle.zip -d /tmp
-          /tmp/gradle-${GRADLE_VERSION}/bin/gradle wrapper --gradle-version ${GRADLE_VERSION}
+          gradle wrapper --gradle-version 8.7 --no-daemon
           chmod +x gradlew
+          echo "=== wrapper 已生成 ==="
           ls -la gradle/wrapper/
+          cat gradle/wrapper/gradle-wrapper.properties
 
       # ---------- 6. 构建 APK ----------
       - name: 构建 Release APK

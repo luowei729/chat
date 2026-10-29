@@ -50,13 +50,26 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
-            // 有 keystore 才签名，否则产出 unsigned apk 供内测
-            if (!System.getenv("ANDROID_KEYSTORE_PATH").isNullOrBlank()) {
-                signingConfig = signingConfigs.getByName("release")
+            /**
+             * 签名策略：
+             * - 配置了 keystore（CI 有 Secret）→ 用正式密钥签名
+             * - 没配置 → 退回 debug 密钥签名
+             *
+             * 为什么要退回 debug 签名而不是产出 unsigned：
+             * unsigned APK 根本无法安装，内测时毫无意义；
+             * 用 debug 密钥签名后至少能装上真机验证功能，
+             * 只是不能上架应用市场（上架必须用正式密钥）。
+             */
+            signingConfig = if (!System.getenv("ANDROID_KEYSTORE_PATH").isNullOrBlank()) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
             }
         }
         debug {
-            applicationIdSuffix = ".debug"
+            // 去掉后缀：避免与 release 包同时安装时冲突
+            // 如果需要在同一台设备同时装两个包，可把下面一行改回 ".debug"
+            applicationIdSuffix = ""
             isMinifyEnabled = false
         }
     }
@@ -89,11 +102,33 @@ android {
 
 dependencies {
     // ---------- Lynx 引擎 ----------
-    // 官方 Android SDK：提供 LynxView 与运行时
+    // 核心包已传递依赖 primjs(4.2.1) / lynx-jssdk / lynx-trace / service-api，
+    // 无需重复声明，否则版本冲突
     implementation("org.lynxsdk.lynx:lynx:4.2.0")
+
+    // 图片服务：Lynx 的 <image> 元素依赖它渲染图片，缺了图片会白屏
+    implementation("org.lynxsdk.lynx:lynx-service-image:4.2.0")
+    // 日志服务：把前端 console 输出转到 Logcat，排查问题必备
+    implementation("org.lynxsdk.lynx:lynx-service-log:4.2.0")
+
+    // 扩展元素：input / textarea / webview / video 等原生组件
+    // 注意：不加这个，<input> 会渲染失败（登录页直接不可用）
+    implementation("org.lynxsdk.lynx:xelement:4.2.0")
+
+    // ---------- 图片加载 ----------
+    // LynxImageService 依赖 Fresco，版本必须与官方示例一致（2.3.0）
+    implementation("com.facebook.fresco:fresco:2.3.0")
+    implementation("com.facebook.fresco:animated-gif:2.3.0")
+    implementation("com.facebook.fresco:animated-webp:2.3.0")
+    implementation("com.facebook.fresco:webpsupport:2.3.0")
+
+    // ---------- 网络 ----------
+    // Lynx 内部 HTTP 服务使用 OkHttp
+    implementation("com.squareup.okhttp3:okhttp:4.9.0")
 
     // ---------- AndroidX 基础 ----------
     implementation("androidx.core:core-ktx:1.12.0")
+    // AppCompatActivity 需要 appcompat；主题必须用 Theme.AppCompat 系
     implementation("androidx.appcompat:appcompat:1.6.1")
 
     // ---------- WebRTC ----------

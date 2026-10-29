@@ -4,17 +4,23 @@
       ============================================================
       应用主题
       ------------------------------------------------------------
-      用 Material.Light.NoActionBar 而不是 AppCompat 主题：
-      1. 不依赖 appcompat 的 Material 组件，减小包体积；
-      2. 深色界面由 Lynx 自己绘制，原生只负责黑底；
-      3. 避免 AppCompat 主题在部分国产 ROM 上的兼容问题。
+      必须继承 Theme.AppCompat 系：
+      MainActivity 使用 AppCompatActivity，若用平台主题
+      Theme.Material.* 会直接抛异常崩溃：
+      "You need to use a Theme.AppCompat theme (or descendant)
+       with this activity"
+
+      DayNight：跟随系统深浅色。界面本身由前端绘制深色，
+      这里主要保证启动瞬间不闪白屏。
       ============================================================
     -->
-    <style name="Theme.Chat" parent="Theme.Material.Light.NoActionBar">
+    <style name="Theme.Chat" parent="Theme.AppCompat.DayNight.NoActionBar">
         <!-- 启动瞬间的窗口背景：与前端深色背景一致，避免白屏闪一下 -->
         <item name="android:windowBackground">@color/background</item>
         <item name="android:statusBarColor">@color/background</item>
         <item name="android:navigationBarColor">@color/background</item>
+        <!-- 深色背景配浅色图标 -->
         <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
     </style>
 </resources>

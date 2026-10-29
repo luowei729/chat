@@ -18,14 +18,15 @@ import { ApiError } from '../api/client.js';
 import * as ws from '../api/ws.js';
 import { pop, reset } from '../router.js';
 import { setUser } from '../store/auth.js';
-import { colors, commonStyles, fontSize, spacing } from '../theme.js';
+import { colors, commonStyles, fontSize, radius, spacing } from '../theme.js';
 
 export function RegisterPage(props: { initialInviteCode?: string }) {
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [password, setPassword] = useState('');
   const [nickname, setNickname] = useState('');
-  const [inviteCode, setInviteCode] = useState(props.initialInviteCode ?? '');
+  // 默认邀请码：方便新用户直接体验；服务端 CHAT8888 长期有效（100 次配额）
+  const [inviteCode, setInviteCode] = useState(props.initialInviteCode ?? 'CHAT8888');
 
   const [countdown, setCountdown] = useState(0);
   const [inviteHint, setInviteHint] = useState<{ ok: boolean; text: string } | null>(null);
@@ -129,126 +130,159 @@ export function RegisterPage(props: { initialInviteCode?: string }) {
 
   return (
     <view style={commonStyles.page}>
-      {/* 导航栏 */}
+      {/* 导航栏：左右固定 64，标题用 view 包裹真正居中 */}
       <view style={commonStyles.header}>
-        <text
-          style={{ color: colors.primary, fontSize: fontSize.md, width: 60 }}
-          bindtap={pop}
-        >
-          返回
-        </text>
-        <text style={commonStyles.headerTitle}>注册</text>
-        <view style={{ width: 60 }} />
+        <view style={commonStyles.headerSide}>
+          <text style={{ color: colors.primary, fontSize: fontSize.md }} bindtap={pop}>
+            返回
+          </text>
+        </view>
+        <view style={commonStyles.headerCenter}>
+          <text style={commonStyles.headerTitle}>注册</text>
+        </view>
+        <view style={commonStyles.headerSide} />
       </view>
 
-      <scroll-view style={commonStyles.scroll}>
-        <view style={{ padding: spacing.xl, gap: spacing.sm }}>
-          {/* 邮箱 */}
-          <text style={labelStyle}>邮箱</text>
-          <input
-            style={commonStyles.input}
-            default-value={email}
-            placeholder="用于接收验证码与找回密码"
-            bindinput={(e: { detail: { value: string } }) => setEmail(e.detail.value)}
-          />
+      <scroll-view scroll-orientation="vertical" style={commonStyles.scroll}>
+        <view style={{ padding: spacing.xl, paddingBottom: spacing.xxxl }}>
+          {/* 标题区居中 */}
+          <view style={{ display: 'flex', alignItems: 'center', marginBottom: spacing.lg }}>
+            <text style={{ color: colors.text, fontSize: fontSize.xl, fontWeight: '700' }}>
+              创建账号
+            </text>
+            <text style={{ color: colors.textFaint, fontSize: fontSize.sm, marginTop: spacing.xs }}>
+              已为你填好体验邀请码，直接注册即可
+            </text>
+          </view>
 
-          {/* 验证码 + 发送按钮 */}
-          <text style={labelStyle}>验证码</text>
-          <view style={{ display: 'flex', flexDirection: 'row', gap: spacing.sm }}>
+          <view style={commonStyles.card}>
+            {/* 邮箱 */}
+            <text style={labelStyle}>邮箱</text>
             <input
-              style={{ ...commonStyles.input, flex: 1 }}
-              default-value={code}
-              placeholder="6 位数字"
-              bindinput={(e: { detail: { value: string } }) => setCode(e.detail.value)}
+              style={{ ...commonStyles.input, marginTop: spacing.sm }}
+              default-value={email}
+              placeholder="用于接收验证码与找回密码"
+              bindinput={(e: { detail: { value: string } }) => setEmail(e.detail.value)}
             />
+
+            {/* 验证码 + 发送按钮 */}
+            <text style={labelStyle}>验证码</text>
             <view
               style={{
-                width: 110,
-                height: 48,
-                borderRadius: 10,
-                backgroundColor: countdown > 0 ? colors.surfaceAlt : colors.primarySoft,
                 display: 'flex',
+                flexDirection: 'row',
                 alignItems: 'center',
-                justifyContent: 'center',
+                marginTop: spacing.sm,
               }}
-              bindtap={handleSendCode}
             >
+              <view style={{ flex: 1, marginRight: spacing.sm }}>
+                <input
+                  style={commonStyles.input}
+                  default-value={code}
+                  placeholder="6 位数字"
+                  bindinput={(e: { detail: { value: string } }) => setCode(e.detail.value)}
+                />
+              </view>
+              <view
+                style={{
+                  width: 110,
+                  height: 50,
+                  borderRadius: radius.md,
+                  backgroundColor: countdown > 0 ? colors.surfaceAlt : colors.primarySoft,
+                  borderWidth: 1,
+                  borderColor: countdown > 0 ? colors.border : colors.primary,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+                bindtap={handleSendCode}
+              >
+                <text
+                  style={{
+                    color: countdown > 0 ? colors.textFaint : colors.primary,
+                    fontSize: fontSize.sm,
+                  }}
+                >
+                  {countdown > 0 ? `${countdown}s` : '获取验证码'}
+                </text>
+              </view>
+            </view>
+
+            {/* 密码 */}
+            <text style={labelStyle}>密码</text>
+            <input
+              style={{ ...commonStyles.input, marginTop: spacing.sm }}
+              default-value={password}
+              type="password"
+              placeholder="至少 8 位"
+              bindinput={(e: { detail: { value: string } }) => setPassword(e.detail.value)}
+            />
+
+            {/* 昵称 */}
+            <text style={labelStyle}>昵称</text>
+            <input
+              style={{ ...commonStyles.input, marginTop: spacing.sm }}
+              default-value={nickname}
+              placeholder="其他用户看到的名字"
+              bindinput={(e: { detail: { value: string } }) => setNickname(e.detail.value)}
+            />
+
+            {/* 邀请码 */}
+            <text style={labelStyle}>邀请码</text>
+            <input
+              style={{ ...commonStyles.input, marginTop: spacing.sm }}
+              default-value={inviteCode}
+              placeholder="已填好体验码 CHAT8888"
+              bindinput={(e: { detail: { value: string } }) => setInviteCode(e.detail.value)}
+              bindblur={handleInviteBlur}
+            />
+            {inviteHint ? (
               <text
                 style={{
-                  color: countdown > 0 ? colors.textFaint : colors.primary,
-                  fontSize: fontSize.sm,
+                  color: inviteHint.ok ? colors.success : colors.danger,
+                  fontSize: fontSize.xs,
+                  marginTop: spacing.xs,
                 }}
               >
-                {countdown > 0 ? `${countdown}s` : '获取验证码'}
+                {inviteHint.text}
+              </text>
+            ) : (
+              <text style={{ color: colors.textFaint, fontSize: fontSize.xs, marginTop: spacing.xs }}>
+                体验邀请码 CHAT8888 可直接使用
+              </text>
+            )}
+
+            {/* 错误提示 */}
+            <view style={{ height: 24, justifyContent: 'center', marginTop: spacing.sm }}>
+              {error ? (
+                <text
+                  style={{ color: colors.danger, fontSize: fontSize.sm, textAlign: 'center' }}
+                >
+                  {error}
+                </text>
+              ) : null}
+            </view>
+
+            {/* 提交 */}
+            <view
+              style={{ ...commonStyles.buttonPrimary, opacity: loading ? 0.6 : 1 }}
+              bindtap={handleRegister}
+            >
+              <text style={commonStyles.buttonPrimaryText}>
+                {loading ? '注册中…' : '注 册'}
               </text>
             </view>
-          </view>
-
-          {/* 密码 */}
-          <text style={labelStyle}>密码</text>
-          <input
-            style={commonStyles.input}
-            default-value={password}
-            type="password"
-            placeholder="至少 8 位"
-            bindinput={(e: { detail: { value: string } }) => setPassword(e.detail.value)}
-          />
-
-          {/* 昵称 */}
-          <text style={labelStyle}>昵称</text>
-          <input
-            style={commonStyles.input}
-            default-value={nickname}
-            placeholder="其他用户看到的名字"
-            bindinput={(e: { detail: { value: string } }) => setNickname(e.detail.value)}
-          />
-
-          {/* 邀请码 */}
-          <text style={labelStyle}>邀请码</text>
-          <input
-            style={commonStyles.input}
-            default-value={inviteCode}
-            placeholder="必填，8 位字符"
-            bindinput={(e: { detail: { value: string } }) => setInviteCode(e.detail.value)}
-            bindblur={handleInviteBlur}
-          />
-          {inviteHint ? (
-            <text
-              style={{
-                color: inviteHint.ok ? colors.success : colors.danger,
-                fontSize: fontSize.xs,
-              }}
-            >
-              {inviteHint.text}
-            </text>
-          ) : null}
-
-          {/* 错误提示 */}
-          <view style={{ height: 22, justifyContent: 'center', marginTop: spacing.xs }}>
-            {error ? (
-              <text style={{ color: colors.danger, fontSize: fontSize.sm }}>{error}</text>
-            ) : null}
-          </view>
-
-          {/* 提交 */}
-          <view
-            style={{ ...commonStyles.buttonPrimary, opacity: loading ? 0.6 : 1 }}
-            bindtap={handleRegister}
-          >
-            <text style={commonStyles.buttonPrimaryText}>
-              {loading ? '注册中…' : '注册'}
-            </text>
           </view>
 
           <text
             style={{
               color: colors.textFaint,
               fontSize: fontSize.xs,
-              marginTop: spacing.md,
-              lineHeight: 1.6,
+              marginTop: spacing.lg,
+              textAlign: 'center',
             }}
           >
-            注册即表示同意用户协议与隐私政策。邀请码由已注册用户提供，每个码有使用次数限制。
+            注册即表示同意用户协议与隐私政策
           </text>
         </view>
       </scroll-view>
@@ -259,5 +293,5 @@ export function RegisterPage(props: { initialInviteCode?: string }) {
 const labelStyle = {
   color: colors.textMuted,
   fontSize: fontSize.sm,
-  marginTop: spacing.md,
+  marginTop: spacing.lg,
 } as const;

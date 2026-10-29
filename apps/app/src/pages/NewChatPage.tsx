@@ -97,48 +97,58 @@ export function NewChatPage() {
 
   return (
     <view style={commonStyles.page}>
-      {/* 顶部栏 */}
+      {/* 顶部栏：三段式居中 */}
       <view style={commonStyles.header}>
-        <text style={{ color: colors.primary, fontSize: fontSize.md, width: 60 }} bindtap={pop}>
-          返回
-        </text>
-        <text style={commonStyles.headerTitle}>{groupMode ? '创建群聊' : '发起聊天'}</text>
-        <text
-          style={{ color: colors.primary, fontSize: fontSize.sm, width: 60, textAlign: 'right' }}
-          bindtap={() => {
-            setGroupMode(!groupMode);
-            setSelected(new Set());
-            setError(null);
-          }}
-        >
-          {groupMode ? '私聊' : '群聊'}
-        </text>
+        <view style={commonStyles.headerSide}>
+          <text style={{ color: colors.primary, fontSize: fontSize.md }} bindtap={pop}>
+            返回
+          </text>
+        </view>
+        <view style={commonStyles.headerCenter}>
+          <text style={commonStyles.headerTitle}>{groupMode ? '创建群聊' : '发起聊天'}</text>
+        </view>
+        <view style={{ ...commonStyles.headerSide, justifyContent: 'flex-end' }}>
+          <text
+            style={{ color: colors.primary, fontSize: fontSize.sm }}
+            bindtap={() => {
+              setGroupMode(!groupMode);
+              setSelected(new Set());
+              setError(null);
+            }}
+          >
+            {groupMode ? '私聊' : '群聊'}
+          </text>
+        </view>
       </view>
 
-      <view style={{ padding: spacing.md, gap: spacing.sm }}>
+      <view style={{ padding: spacing.md }}>
         {/* 群名输入（仅群聊模式） */}
         {groupMode ? (
-          <input
-            style={commonStyles.input}
-            default-value={groupTitle}
-            placeholder="群名称"
-            bindinput={(e: { detail: { value: string } }) => setGroupTitle(e.detail.value)}
-          />
+          <view style={{ marginBottom: spacing.sm }}>
+            <input
+              style={commonStyles.input}
+              default-value={groupTitle}
+              placeholder="群名称"
+              bindinput={(e: { detail: { value: string } }) => setGroupTitle(e.detail.value)}
+            />
+          </view>
         ) : null}
 
         {/* 搜索框 */}
-        <view style={{ display: 'flex', flexDirection: 'row', gap: spacing.sm }}>
-          <input
-            style={{ ...commonStyles.input, flex: 1 }}
-            default-value={keyword}
-            placeholder="邮箱或昵称"
-            bindinput={(e: { detail: { value: string } }) => setKeyword(e.detail.value)}
-            bindconfirm={handleSearch}
-          />
+        <view style={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
+          <view style={{ flex: 1, marginRight: spacing.sm }}>
+            <input
+              style={commonStyles.input}
+              default-value={keyword}
+              placeholder="邮箱或昵称"
+              bindinput={(e: { detail: { value: string } }) => setKeyword(e.detail.value)}
+              bindconfirm={handleSearch}
+            />
+          </view>
           <view
             style={{
               width: 72,
-              height: 48,
+              height: 50,
               borderRadius: radius.md,
               backgroundColor: colors.primary,
               display: 'flex',
@@ -171,7 +181,7 @@ export function NewChatPage() {
       </view>
 
       {/* 搜索结果 */}
-      <scroll-view style={commonStyles.scroll}>
+      <scroll-view scroll-orientation="vertical" style={commonStyles.scroll}>
         {results.map((user) => (
           <view
             key={user.id}
@@ -204,7 +214,7 @@ export function NewChatPage() {
               </text>
             </view>
 
-            <view style={{ flex: 1 }}>
+            <view style={{ flexGrow: 1, flexShrink: 1, flexBasis: 0 }}>
               <text style={{ color: colors.text, fontSize: fontSize.md }} text-maxline="1">
                 {user.nickname}
               </text>

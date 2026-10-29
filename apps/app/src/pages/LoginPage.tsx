@@ -59,70 +59,126 @@ export function LoginPage() {
 
   return (
     <view style={commonStyles.page}>
-      {/* 顶部留白 + 品牌区 */}
-      <view style={{ height: 120, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <text style={{ color: colors.text, fontSize: fontSize.xxl, fontWeight: '700' }}>chat</text>
-      </view>
-
-      <view style={{ paddingLeft: spacing.xl, paddingRight: spacing.xl, gap: spacing.md }}>
-        <text style={{ color: colors.textMuted, fontSize: fontSize.sm, marginBottom: spacing.xs }}>
-          邮箱
-        </text>
-        <input
-          style={commonStyles.input}
-          default-value={email}
-          placeholder="you@example.com"
-          bindinput={(e: { detail: { value: string } }) => setEmail(e.detail.value)}
-        />
-
-        <text style={{ color: colors.textMuted, fontSize: fontSize.sm, marginTop: spacing.sm, marginBottom: spacing.xs }}>
-          密码
-        </text>
-        <input
-          style={commonStyles.input}
-          default-value={password}
-          type="password"
-          placeholder="请输入密码"
-          bindinput={(e: { detail: { value: string } }) => setPassword(e.detail.value)}
-        />
-
-        {/* 错误提示：固定高度避免布局跳动 */}
-        <view style={{ height: 22, justifyContent: 'center' }}>
-          {error ? (
-            <text style={{ color: colors.danger, fontSize: fontSize.sm }}>{error}</text>
-          ) : null}
-        </view>
-
+      {/* 居中内容区：整块表单垂直居中，不再堆在顶部 */}
+      <scroll-view scroll-orientation="vertical" style={commonStyles.scroll}>
         <view
           style={{
-            ...commonStyles.buttonPrimary,
-            opacity: loading ? 0.6 : 1,
-            marginTop: spacing.sm,
+            flex: 1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            paddingLeft: spacing.xl,
+            paddingRight: spacing.xl,
+            paddingTop: spacing.xxxl,
+            paddingBottom: spacing.xxxl,
           }}
-          bindtap={handleLogin}
         >
-          <text style={commonStyles.buttonPrimaryText}>
-            {loading ? '登录中…' : '登录'}
-          </text>
-        </view>
+          <view style={{ width: '100%', maxWidth: 380 }}>
+            {/* 品牌区：Logo 圆 + 标题 + 副标题，全部居中 */}
+            <view style={{ display: 'flex', alignItems: 'center', marginBottom: spacing.xxl }}>
+              <view
+                style={{
+                  width: 72,
+                  height: 72,
+                  borderRadius: 22,
+                  backgroundColor: colors.primary,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginBottom: spacing.lg,
+                }}
+              >
+                <text style={{ color: '#ffffff', fontSize: 30, fontWeight: '700' }}>C</text>
+              </view>
+              <text style={{ color: colors.text, fontSize: fontSize.xxl, fontWeight: '700' }}>
+                chat
+              </text>
+              <text style={{ color: colors.textFaint, fontSize: fontSize.sm, marginTop: spacing.xs }}>
+                安全 · 快速 · 跨平台聊天
+              </text>
+            </view>
 
-        <view
-          style={{ display: 'flex', flexDirection: 'row', justifyContent: 'space-between', marginTop: spacing.lg }}
-        >
-          <text
-            style={{ color: colors.primary, fontSize: fontSize.sm }}
-            bindtap={() => push({ name: 'register' })}
-          >
-            注册新账号
-          </text>
-          <text
-            style={{ color: colors.textMuted, fontSize: fontSize.sm }}
-            bindtap={() => push({ name: 'reset-password' })}
-          >
-            忘记密码
-          </text>
+            {/* 表单卡片 */}
+            <view style={commonStyles.card}>
+              <text style={{ color: colors.textMuted, fontSize: fontSize.sm, marginBottom: spacing.sm }}>
+                邮箱
+              </text>
+              <input
+                style={commonStyles.input}
+                default-value={email}
+                placeholder="you@example.com"
+                bindinput={(e: { detail: { value: string } }) => setEmail(e.detail.value)}
+              />
+
+              <text
+                style={{
+                  color: colors.textMuted,
+                  fontSize: fontSize.sm,
+                  marginTop: spacing.lg,
+                  marginBottom: spacing.sm,
+                }}
+              >
+                密码
+              </text>
+              <input
+                style={commonStyles.input}
+                default-value={password}
+                type="password"
+                placeholder="请输入密码"
+                bindinput={(e: { detail: { value: string } }) => setPassword(e.detail.value)}
+              />
+
+              {/* 错误提示：固定高度避免布局跳动 */}
+              <view style={{ height: 24, justifyContent: 'center', marginTop: spacing.sm }}>
+                {error ? (
+                  <text style={{ color: colors.danger, fontSize: fontSize.sm, textAlign: 'center' }}>
+                    {error}
+                  </text>
+                ) : null}
+              </view>
+
+              <view
+                style={{
+                  ...commonStyles.buttonPrimary,
+                  opacity: loading ? 0.6 : 1,
+                  marginTop: spacing.sm,
+                }}
+                bindtap={handleLogin}
+              >
+                <text style={commonStyles.buttonPrimaryText}>
+                  {loading ? '登录中…' : '登 录'}
+                </text>
+              </view>
+            </view>
+
+            {/* 底部链接：居中并排 */}
+            <view
+              style={{
+                display: 'flex',
+                flexDirection: 'row',
+                justifyContent: 'center',
+                marginTop: spacing.xl,
+              }}
+            >
+              <text
+                style={{ color: colors.primary, fontSize: fontSize.sm, padding: spacing.sm }}
+                bindtap={() => push({ name: 'register' })}
+              >
+                注册新账号
+              </text>
+              <text style={{ color: colors.border, fontSize: fontSize.sm, padding: spacing.sm }}>
+                |
+              </text>
+              <text
+                style={{ color: colors.textMuted, fontSize: fontSize.sm, padding: spacing.sm }}
+                bindtap={() => push({ name: 'reset-password' })}
+              >
+                忘记密码
+              </text>
+            </view>
+          </view>
         </view>
-      </view>
+      </scroll-view>
     </view>
   );
 }

@@ -47,25 +47,52 @@ export function ConversationsPage() {
 
   return (
     <view style={commonStyles.page}>
-      {/* 顶部栏 */}
+      {/* 顶部栏：品牌居左，动作用大按钮，全部垂直居中 */}
       <view style={commonStyles.header}>
-        <text style={{ color: colors.text, fontSize: fontSize.lg, fontWeight: '700', flex: 1 }}>
-          chat
-        </text>
+        <view style={{ flex: 1, display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
+          <view
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 10,
+              backgroundColor: colors.primary,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginRight: spacing.sm,
+            }}
+          >
+            <text style={{ color: '#fff', fontSize: fontSize.md, fontWeight: '700' }}>C</text>
+          </view>
+          <text style={{ color: colors.text, fontSize: fontSize.lg, fontWeight: '700' }}>
+            chat
+          </text>
+        </view>
         <text
-          style={{ color: colors.primary, fontSize: fontSize.sm, marginRight: spacing.md }}
+          style={{
+            color: colors.primary,
+            fontSize: fontSize.sm,
+            paddingLeft: spacing.sm,
+            paddingRight: spacing.sm,
+            paddingTop: spacing.xs,
+            paddingBottom: spacing.xs,
+          }}
           bindtap={() => push({ name: 'new-chat' })}
         >
           新建
         </text>
         <text
-          style={{ color: colors.textMuted, fontSize: fontSize.sm, marginRight: spacing.md }}
+          style={{
+            color: colors.textMuted,
+            fontSize: fontSize.sm,
+            padding: spacing.sm,
+          }}
           bindtap={() => push({ name: 'invite' })}
         >
           邀请
         </text>
         <text
-          style={{ color: colors.textMuted, fontSize: fontSize.sm }}
+          style={{ color: colors.textMuted, fontSize: fontSize.sm, padding: spacing.sm }}
           bindtap={() => push({ name: 'profile' })}
         >
           我
@@ -73,19 +100,48 @@ export function ConversationsPage() {
       </view>
 
       {/* 会话列表 */}
-      <scroll-view
-        style={commonStyles.scroll}
-        // Lynx 的下拉刷新：滚动到顶部继续下拉时触发
-        bindscrolltolower={() => undefined}
-      >
+      <scroll-view scroll-orientation="vertical" style={commonStyles.scroll}>
         {!loaded || (loading && list.length === 0) ? (
           <view style={{ padding: spacing.xl, alignItems: 'center' }}>
             <text style={{ color: colors.textMuted, fontSize: fontSize.sm }}>加载中…</text>
           </view>
         ) : list.length === 0 ? (
-          <view style={{ padding: spacing.xxl, alignItems: 'center', gap: spacing.md }}>
-            <text style={{ color: colors.textMuted, fontSize: fontSize.md }}>还没有会话</text>
-            <text style={{ color: colors.textFaint, fontSize: fontSize.sm, textAlign: 'center' }}>
+          <view
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              paddingTop: 100,
+              paddingLeft: spacing.xxl,
+              paddingRight: spacing.xxl,
+            }}
+          >
+            <view
+              style={{
+                width: 84,
+                height: 84,
+                borderRadius: 28,
+                backgroundColor: colors.surfaceAlt,
+                borderWidth: 1,
+                borderColor: colors.cardBorder,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: spacing.lg,
+              }}
+            >
+              <text style={{ fontSize: 36 }}>💬</text>
+            </view>
+            <text style={{ color: colors.text, fontSize: fontSize.md, fontWeight: '600' }}>
+              还没有会话
+            </text>
+            <text
+              style={{
+                color: colors.textFaint,
+                fontSize: fontSize.sm,
+                textAlign: 'center',
+                marginTop: spacing.sm,
+              }}
+            >
               点击右上角「新建」，搜索邮箱或昵称发起聊天
             </text>
           </view>
@@ -161,36 +217,38 @@ function ConversationItem(props: { conv: ConversationSummary; onTap: () => void 
         )}
       </view>
 
-      {/* 标题 + 最后消息 */}
-      <view style={{ flex: 1, gap: 4 }}>
-        <view style={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
-          <text
-            style={{
-              color: colors.text,
-              fontSize: fontSize.md,
-              fontWeight: '500',
-              flex: 1,
-            }}
-            // Lynx 文本默认不截断，用 maxLines 控制
-            text-maxline="1"
-          >
-            {conv.title}
-            {conv.type === 'group' ? ` (${conv.memberCount})` : ''}
-          </text>
+      {/* 标题 + 最后消息：用 view 包裹 text 做伸缩，避免 text 直接 flex 塌陷 */}
+      <view style={{ flex: 1 }}>
+        <view
+          style={{
+            display: 'flex',
+            flexDirection: 'row',
+            alignItems: 'center',
+            marginBottom: 4,
+          }}
+        >
+          <view style={{ flex: 1, marginRight: spacing.sm }}>
+            <text
+              style={{ color: colors.text, fontSize: fontSize.md, fontWeight: '500' }}
+              text-maxline="1"
+            >
+              {conv.title}
+              {conv.type === 'group' ? ` (${conv.memberCount})` : ''}
+            </text>
+          </view>
           <text style={{ color: colors.textFaint, fontSize: fontSize.xs }}>
             {formatTime(conv.lastMessageAt)}
           </text>
         </view>
 
         <view style={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
-          <text
-            style={{ color: colors.textMuted, fontSize: fontSize.sm, flex: 1 }}
-            text-maxline="1"
-          >
-            {conv.lastMessage
-              ? `${conv.lastMessage.senderName}: ${conv.lastMessage.summary}`
-              : '暂无消息'}
-          </text>
+          <view style={{ flex: 1, marginRight: spacing.sm }}>
+            <text style={{ color: colors.textMuted, fontSize: fontSize.sm }} text-maxline="1">
+              {conv.lastMessage
+                ? `${conv.lastMessage.senderName}: ${conv.lastMessage.summary}`
+                : '暂无消息'}
+            </text>
+          </view>
 
           {/* 未读红点 */}
           {conv.unreadCount > 0 ? (

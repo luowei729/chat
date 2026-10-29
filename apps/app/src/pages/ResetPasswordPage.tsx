@@ -11,7 +11,7 @@ import { useEffect, useRef, useState } from '@lynx-js/react';
 import { resetPassword, sendEmailCode } from '../api/index.js';
 import { ApiError } from '../api/client.js';
 import { pop, replace } from '../router.js';
-import { colors, commonStyles, fontSize, spacing } from '../theme.js';
+import { colors, commonStyles, fontSize, radius, spacing } from '../theme.js';
 
 export function ResetPasswordPage() {
   const [email, setEmail] = useState('');
@@ -86,18 +86,23 @@ export function ResetPasswordPage() {
 
   return (
     <view style={commonStyles.page}>
-      {/* 顶部栏 */}
+      {/* 顶部栏：三段式居中 */}
       <view style={commonStyles.header}>
-        <text style={{ color: colors.primary, fontSize: fontSize.md, width: 60 }} bindtap={pop}>
-          返回
-        </text>
-        <text style={commonStyles.headerTitle}>重置密码</text>
-        <view style={{ width: 60 }} />
+        <view style={commonStyles.headerSide}>
+          <text style={{ color: colors.primary, fontSize: fontSize.md }} bindtap={pop}>
+            返回
+          </text>
+        </view>
+        <view style={commonStyles.headerCenter}>
+          <text style={commonStyles.headerTitle}>重置密码</text>
+        </view>
+        <view style={commonStyles.headerSide} />
       </view>
 
-      <view style={{ padding: spacing.xl, gap: spacing.sm }}>
+      <scroll-view scroll-orientation="vertical" style={commonStyles.scroll}>
+        <view style={{ padding: spacing.xl, paddingBottom: spacing.xxxl }}>
         {success ? (
-          <view style={{ alignItems: 'center', gap: spacing.md, paddingTop: spacing.xxl }}>
+          <view style={{ alignItems: 'center', paddingTop: spacing.xxl }}>
             <text style={{ color: colors.success, fontSize: fontSize.lg }}>密码已重置</text>
             <text style={{ color: colors.textMuted, fontSize: fontSize.sm }}>
               正在返回登录页…
@@ -114,19 +119,30 @@ export function ResetPasswordPage() {
             />
 
             <text style={labelStyle}>验证码</text>
-            <view style={{ display: 'flex', flexDirection: 'row', gap: spacing.sm }}>
-              <input
-                style={{ ...commonStyles.input, flex: 1 }}
-                default-value={code}
-                placeholder="6 位数字"
-                bindinput={(e: { detail: { value: string } }) => setCode(e.detail.value)}
-              />
+            <view
+              style={{
+                display: 'flex',
+                flexDirection: 'row',
+                alignItems: 'center',
+                marginTop: spacing.sm,
+              }}
+            >
+              <view style={{ flex: 1, marginRight: spacing.sm }}>
+                <input
+                  style={commonStyles.input}
+                  default-value={code}
+                  placeholder="6 位数字"
+                  bindinput={(e: { detail: { value: string } }) => setCode(e.detail.value)}
+                />
+              </view>
               <view
                 style={{
                   width: 110,
-                  height: 48,
-                  borderRadius: 10,
+                  height: 50,
+                  borderRadius: radius.md,
                   backgroundColor: countdown > 0 ? colors.surfaceAlt : colors.primarySoft,
+                  borderWidth: 1,
+                  borderColor: countdown > 0 ? colors.border : colors.primary,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -180,7 +196,8 @@ export function ResetPasswordPage() {
             </text>
           </>
         )}
-      </view>
+        </view>
+      </scroll-view>
     </view>
   );
 }

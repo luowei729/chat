@@ -195,17 +195,20 @@ export function CallPage(props: {
         justifyContent: 'space-between',
       }}
     >
-      {/* 顶部：通话对象与状态 */}
-      <view style={{ alignItems: 'center', paddingTop: 80, gap: spacing.md }}>
+      {/* 顶部：通话对象与状态（全部居中，用 margin 代替 gap） */}
+      <view style={{ alignItems: 'center', paddingTop: 80 }}>
         <view
           style={{
             width: 96,
             height: 96,
             borderRadius: radius.full,
             backgroundColor: colors.primarySoft,
+            borderWidth: 2,
+            borderColor: colors.cardBorder,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
+            marginBottom: spacing.lg,
           }}
         >
           <text style={{ color: colors.primary, fontSize: 36, fontWeight: '600' }}>
@@ -213,11 +216,14 @@ export function CallPage(props: {
           </text>
         </view>
 
-        <text style={{ color: colors.text, fontSize: fontSize.xl, fontWeight: '600' }}>
+        <text
+          style={{ color: colors.text, fontSize: fontSize.xl, fontWeight: '600', textAlign: 'center' }}
+          text-maxline="1"
+        >
           {callerName ?? '语音通话'}
         </text>
 
-        <text style={{ color: colors.textMuted, fontSize: fontSize.sm }}>
+        <text style={{ color: colors.textMuted, fontSize: fontSize.sm, marginTop: spacing.sm }}>
           {phase === 'ringing'
             ? incoming
               ? '邀请你语音通话'
@@ -230,7 +236,9 @@ export function CallPage(props: {
         </text>
 
         {error ? (
-          <text style={{ color: colors.danger, fontSize: fontSize.sm }}>{error}</text>
+          <text style={{ color: colors.danger, fontSize: fontSize.sm, marginTop: spacing.sm }}>
+            {error}
+          </text>
         ) : null}
       </view>
 
@@ -244,7 +252,6 @@ export function CallPage(props: {
           flexWrap: 'wrap',
           alignContent: 'center',
           justifyContent: 'center',
-          gap: spacing.md,
         }}
       >
         {/* 自己 */}
@@ -266,14 +273,13 @@ export function CallPage(props: {
         ))}
       </view>
 
-      {/* 底部：操作按钮 */}
+      {/* 底部：操作按钮（用 margin 分隔，不用 gap） */}
       <view
         style={{
           paddingBottom: 60,
           display: 'flex',
           flexDirection: 'row',
           justifyContent: 'center',
-          gap: spacing.xxl,
         }}
       >
         {phase === 'ringing' && incoming ? (
@@ -316,9 +322,9 @@ function ParticipantTile(props: {
     <view
       style={{
         width: 88,
-        height: 108,
+        height: 112,
         alignItems: 'center',
-        gap: 6,
+        margin: spacing.sm,
       }}
     >
       <view
@@ -340,13 +346,16 @@ function ParticipantTile(props: {
         </text>
       </view>
 
-      <text style={{ color: colors.textMuted, fontSize: fontSize.xs }} text-maxline="1">
+      <text
+        style={{ color: colors.textMuted, fontSize: fontSize.xs, marginTop: 6, textAlign: 'center' }}
+        text-maxline="1"
+      >
         {name}
         {muted ? ' 🔇' : ''}
       </text>
 
       {connectionState && connectionState !== 'connected' ? (
-        <text style={{ color: colors.textFaint, fontSize: 10 }}>
+        <text style={{ color: colors.textFaint, fontSize: 10, marginTop: 2 }}>
           {connectionState === 'connecting' ? '连接中' : '重连中'}
         </text>
       ) : null}
@@ -364,16 +373,19 @@ function CircleButton(props: {
   const { label, color, icon, onTap } = props;
 
   return (
-    <view style={{ alignItems: 'center', gap: spacing.sm }}>
+    <view style={{ alignItems: 'center', marginLeft: spacing.lg, marginRight: spacing.lg }}>
       <view
         style={{
           width: 64,
           height: 64,
           borderRadius: radius.full,
           backgroundColor: color,
+          borderWidth: 1,
+          borderColor: colors.cardBorder,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
+          marginBottom: spacing.sm,
         }}
         bindtap={onTap}
       >

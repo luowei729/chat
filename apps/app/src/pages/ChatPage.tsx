@@ -192,29 +192,37 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
 
   return (
     <view style={commonStyles.page}>
-      {/* 顶部栏 */}
+      {/* 顶部栏：三段式，标题区用 view 包裹居中 */}
       <view style={commonStyles.header}>
-        <text style={{ color: colors.primary, fontSize: fontSize.md, width: 60 }} bindtap={pop}>
-          返回
-        </text>
-        <view style={{ flex: 1, alignItems: 'center' }}>
-          <text style={{ color: colors.text, fontSize: fontSize.md, fontWeight: '600' }} text-maxline="1">
-            {title}
+        <view style={commonStyles.headerSide}>
+          <text style={{ color: colors.primary, fontSize: fontSize.md }} bindtap={pop}>
+            返回
           </text>
-          {peerTyping ? (
-            <text style={{ color: colors.primary, fontSize: fontSize.xs }}>对方正在输入…</text>
-          ) : null}
         </view>
-        <text
-          style={{ color: colors.primary, fontSize: fontSize.md, width: 60, textAlign: 'right' }}
-          bindtap={startCall}
-        >
-          通话
-        </text>
+        <view style={commonStyles.headerCenter}>
+          <view style={{ display: 'flex', alignItems: 'center' }}>
+            <text
+              style={{ color: colors.text, fontSize: fontSize.md, fontWeight: '600' }}
+              text-maxline="1"
+            >
+              {title}
+            </text>
+            {peerTyping ? (
+              <text style={{ color: colors.primary, fontSize: fontSize.xs, marginTop: 2 }}>
+                对方正在输入…
+              </text>
+            ) : null}
+          </view>
+        </view>
+        <view style={{ ...commonStyles.headerSide, justifyContent: 'flex-end' }}>
+          <text style={{ color: colors.primary, fontSize: fontSize.md }} bindtap={startCall}>
+            通话
+          </text>
+        </view>
       </view>
 
       {/* 消息列表 */}
-      <scroll-view style={commonStyles.scroll}>
+      <scroll-view scroll-orientation="vertical" style={commonStyles.scroll}>
         {/* 加载更多 */}
         {hasMore ? (
           <view
@@ -252,19 +260,20 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
           flexDirection: 'row',
           alignItems: 'center',
           padding: spacing.sm,
-          gap: spacing.sm,
           backgroundColor: colors.surface,
           borderTopWidth: 1,
           borderTopColor: colors.border,
         }}
       >
-        <input
-          style={{ ...commonStyles.input, flex: 1, height: 42 }}
-          default-value={draft}
-          placeholder="输入消息…"
-          bindinput={(e: { detail: { value: string } }) => handleInput(e.detail.value)}
-          bindconfirm={handleSend}
-        />
+        <view style={{ flex: 1, marginRight: spacing.sm }}>
+          <input
+            style={{ ...commonStyles.input, height: 42 }}
+            default-value={draft}
+            placeholder="输入消息…"
+            bindinput={(e: { detail: { value: string } }) => handleInput(e.detail.value)}
+            bindconfirm={handleSend}
+          />
+        </view>
         <view
           style={{
             width: 64,
@@ -324,7 +333,6 @@ function MessageBubble(props: { message: Message; isSelf: boolean }) {
         paddingRight: spacing.md,
         paddingTop: spacing.xs,
         paddingBottom: spacing.xs,
-        gap: spacing.sm,
       }}
     >
       {/* 头像 */}
@@ -334,9 +342,13 @@ function MessageBubble(props: { message: Message; isSelf: boolean }) {
           height: 34,
           borderRadius: radius.full,
           backgroundColor: colors.primarySoft,
+          borderWidth: 1,
+          borderColor: colors.cardBorder,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
+          marginLeft: isSelf ? spacing.sm : 0,
+          marginRight: isSelf ? 0 : spacing.sm,
         }}
       >
         <text style={{ color: colors.primary, fontSize: fontSize.sm, fontWeight: '600' }}>
@@ -366,7 +378,7 @@ function MessageBubble(props: { message: Message; isSelf: boolean }) {
           <MessageContent message={message} isSelf={isSelf} />
         </view>
 
-        <view style={{ display: 'flex', flexDirection: 'row', gap: 6, marginTop: 2 }}>
+        <view style={{ display: 'flex', flexDirection: 'row', marginTop: 2 }}>
           <text style={{ color: colors.textFaint, fontSize: 10 }}>
             {formatClock(message.createdAt)}
           </text>
@@ -375,6 +387,7 @@ function MessageBubble(props: { message: Message; isSelf: boolean }) {
               style={{
                 color: message.localStatus === 'failed' ? colors.danger : colors.textFaint,
                 fontSize: 10,
+                marginLeft: 6,
               }}
             >
               {statusText}

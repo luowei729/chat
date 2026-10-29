@@ -61,38 +61,67 @@ export function ProfilePage() {
 
   return (
     <view style={commonStyles.page}>
-      {/* 顶部栏 */}
+      {/* 顶部栏：三段式居中 */}
       <view style={commonStyles.header}>
-        <text style={{ color: colors.primary, fontSize: fontSize.md, width: 60 }} bindtap={pop}>
-          返回
-        </text>
-        <text style={commonStyles.headerTitle}>我的</text>
-        <view style={{ width: 60 }} />
+        <view style={commonStyles.headerSide}>
+          <text style={{ color: colors.primary, fontSize: fontSize.md }} bindtap={pop}>
+            返回
+          </text>
+        </view>
+        <view style={commonStyles.headerCenter}>
+          <text style={commonStyles.headerTitle}>我的</text>
+        </view>
+        <view style={commonStyles.headerSide} />
       </view>
 
-      <scroll-view style={commonStyles.scroll}>
-        <view style={{ padding: spacing.lg, gap: spacing.md }}>
-          {/* 头像与邮箱 */}
-          <view style={{ ...commonStyles.card, alignItems: 'center', gap: spacing.sm }}>
+      <scroll-view scroll-orientation="vertical" style={commonStyles.scroll}>
+        <view style={{ padding: spacing.lg, paddingBottom: spacing.xxxl }}>
+          {/* 头像与邮箱：全部居中，用 margin 分隔 */}
+          <view
+            style={{
+              ...commonStyles.card,
+              alignItems: 'center',
+              marginBottom: spacing.lg,
+            }}
+          >
             <view
               style={{
                 width: 76,
                 height: 76,
                 borderRadius: radius.full,
                 backgroundColor: colors.primarySoft,
+                borderWidth: 1,
+                borderColor: colors.cardBorder,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
+                marginBottom: spacing.md,
               }}
             >
               <text style={{ color: colors.primary, fontSize: 30, fontWeight: '600' }}>
                 {(user?.nickname ?? '?').slice(0, 1)}
               </text>
             </view>
-            <text style={{ color: colors.text, fontSize: fontSize.lg, fontWeight: '600' }}>
+            <text
+              style={{
+                color: colors.text,
+                fontSize: fontSize.lg,
+                fontWeight: '600',
+                textAlign: 'center',
+              }}
+              text-maxline="1"
+            >
               {user?.nickname ?? '未登录'}
             </text>
-            <text style={{ color: colors.textFaint, fontSize: fontSize.sm }}>
+            <text
+              style={{
+                color: colors.textFaint,
+                fontSize: fontSize.sm,
+                textAlign: 'center',
+                marginTop: spacing.xs,
+              }}
+              text-maxline="1"
+            >
               {user?.emailFull ?? ''}
             </text>
             <view
@@ -103,6 +132,7 @@ export function ProfilePage() {
                 paddingRight: spacing.md,
                 paddingTop: 4,
                 paddingBottom: 4,
+                marginTop: spacing.md,
               }}
             >
               <text style={{ color: colors.primary, fontSize: fontSize.xs }}>
@@ -114,7 +144,7 @@ export function ProfilePage() {
           {/* 编辑昵称 */}
           <text style={labelStyle}>昵称</text>
           <input
-            style={commonStyles.input}
+            style={{ ...commonStyles.input, marginTop: spacing.sm }}
             default-value={nickname}
             placeholder="1-24 个字符"
             bindinput={(e: { detail: { value: string } }) => setNickname(e.detail.value)}
@@ -123,22 +153,40 @@ export function ProfilePage() {
           {/* 编辑签名 */}
           <text style={labelStyle}>个性签名</text>
           <input
-            style={commonStyles.input}
+            style={{ ...commonStyles.input, marginTop: spacing.sm }}
             default-value={bio}
             placeholder="一句话介绍自己（选填）"
             bindinput={(e: { detail: { value: string } }) => setBio(e.detail.value)}
           />
 
           {error ? (
-            <text style={{ color: colors.danger, fontSize: fontSize.sm }}>{error}</text>
+            <text
+              style={{
+                color: colors.danger,
+                fontSize: fontSize.sm,
+                textAlign: 'center',
+                marginTop: spacing.sm,
+              }}
+            >
+              {error}
+            </text>
           ) : null}
           {saved ? (
-            <text style={{ color: colors.success, fontSize: fontSize.sm }}>已保存</text>
+            <text
+              style={{
+                color: colors.success,
+                fontSize: fontSize.sm,
+                textAlign: 'center',
+                marginTop: spacing.sm,
+              }}
+            >
+              已保存
+            </text>
           ) : null}
 
           {/* 保存按钮 */}
           <view
-            style={{ ...commonStyles.buttonPrimary, opacity: saving ? 0.6 : 1 }}
+            style={{ ...commonStyles.buttonPrimary, opacity: saving ? 0.6 : 1, marginTop: spacing.lg }}
             bindtap={handleSave}
           >
             <text style={commonStyles.buttonPrimaryText}>
@@ -150,15 +198,13 @@ export function ProfilePage() {
           <view
             style={{
               ...commonStyles.buttonGhost,
-              marginTop: spacing.xl,
+              marginTop: spacing.lg,
               borderColor: colors.danger,
             }}
             bindtap={handleLogout}
           >
             <text style={{ color: colors.danger, fontSize: fontSize.md }}>退出登录</text>
           </view>
-
-          <view style={{ height: spacing.xxl }} />
         </view>
       </scroll-view>
     </view>

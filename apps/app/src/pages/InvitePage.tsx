@@ -78,24 +78,50 @@ export function InvitePage() {
 
   return (
     <view style={commonStyles.page}>
-      {/* 顶部栏 */}
+      {/* 顶部栏：三段式居中 */}
       <view style={commonStyles.header}>
-        <text style={{ color: colors.primary, fontSize: fontSize.md, width: 60 }} bindtap={pop}>
-          返回
-        </text>
-        <text style={commonStyles.headerTitle}>邀请好友</text>
-        <view style={{ width: 60 }} />
+        <view style={commonStyles.headerSide}>
+          <text style={{ color: colors.primary, fontSize: fontSize.md }} bindtap={pop}>
+            返回
+          </text>
+        </view>
+        <view style={commonStyles.headerCenter}>
+          <text style={commonStyles.headerTitle}>邀请好友</text>
+        </view>
+        <view style={commonStyles.headerSide} />
       </view>
 
-      <scroll-view style={commonStyles.scroll}>
-        <view style={{ padding: spacing.lg, gap: spacing.md }}>
-          {/* 配额卡片 */}
-          <view style={{ ...commonStyles.card, alignItems: 'center', gap: spacing.sm }}>
+      <scroll-view scroll-orientation="vertical" style={commonStyles.scroll}>
+        <view style={{ padding: spacing.lg, paddingBottom: spacing.xxxl }}>
+          {/* 配额卡片：内容全部居中，用 margin 分隔 */}
+          <view
+            style={{
+              ...commonStyles.card,
+              alignItems: 'center',
+              marginBottom: spacing.lg,
+            }}
+          >
             <text style={{ color: colors.textMuted, fontSize: fontSize.sm }}>剩余邀请名额</text>
-            <text style={{ color: colors.primary, fontSize: 42, fontWeight: '700' }}>
+            <text
+              style={{
+                color: colors.primary,
+                fontSize: 44,
+                fontWeight: '700',
+                marginTop: spacing.sm,
+                marginBottom: spacing.sm,
+                textAlign: 'center',
+              }}
+            >
               {data?.quota ?? 0}
             </text>
-            <text style={{ color: colors.textFaint, fontSize: fontSize.xs }}>
+            <text
+              style={{
+                color: colors.textFaint,
+                fontSize: fontSize.xs,
+                marginBottom: spacing.lg,
+                textAlign: 'center',
+              }}
+            >
               已邀请 {data?.invitees.length ?? 0} 位好友
             </text>
 
@@ -103,7 +129,6 @@ export function InvitePage() {
               style={{
                 ...commonStyles.buttonPrimary,
                 width: '100%',
-                marginTop: spacing.md,
                 opacity: (data?.quota ?? 0) <= 0 || creating ? 0.5 : 1,
               }}
               bindtap={handleCreate}
@@ -115,11 +140,26 @@ export function InvitePage() {
           </view>
 
           {error ? (
-            <text style={{ color: colors.danger, fontSize: fontSize.sm }}>{error}</text>
+            <text
+              style={{
+                color: colors.danger,
+                fontSize: fontSize.sm,
+                textAlign: 'center',
+                marginBottom: spacing.sm,
+              }}
+            >
+              {error}
+            </text>
           ) : null}
 
           {/* 已发出的邀请码 */}
-          <text style={{ color: colors.textMuted, fontSize: fontSize.sm, marginTop: spacing.md }}>
+          <text
+            style={{
+              color: colors.textMuted,
+              fontSize: fontSize.sm,
+              marginBottom: spacing.sm,
+            }}
+          >
             我的邀请码
           </text>
 
@@ -138,21 +178,18 @@ export function InvitePage() {
                   display: 'flex',
                   flexDirection: 'row',
                   alignItems: 'center',
+                  marginBottom: spacing.sm,
                 }}
                 bindtap={() => copyCode(c.code)}
               >
-                <view style={{ flex: 1, gap: 4 }}>
+                <view style={{ flex: 1, marginRight: spacing.sm }}>
                   <text
-                    style={{
-                      color: colors.text,
-                      fontSize: fontSize.lg,
-                      fontWeight: '600',
-                      letterSpacing: 3,
-                    }}
+                    style={{ color: colors.text, fontSize: fontSize.lg, fontWeight: '600' }}
+                    text-maxline="1"
                   >
                     {c.code}
                   </text>
-                  <text style={{ color: colors.textFaint, fontSize: fontSize.xs }}>
+                  <text style={{ color: colors.textFaint, fontSize: fontSize.xs, marginTop: 4 }}>
                     {c.remainingUses > 0
                       ? `剩余 ${c.remainingUses}/${c.maxUses} 次`
                       : '已用完'}
@@ -184,7 +221,7 @@ export function InvitePage() {
                   display: 'flex',
                   flexDirection: 'row',
                   alignItems: 'center',
-                  gap: spacing.md,
+                  marginBottom: spacing.sm,
                 }}
               >
                 <view
@@ -196,6 +233,7 @@ export function InvitePage() {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
+                    marginRight: spacing.md,
                   }}
                 >
                   <text style={{ color: colors.primary, fontSize: fontSize.md, fontWeight: '600' }}>
@@ -203,8 +241,10 @@ export function InvitePage() {
                   </text>
                 </view>
                 <view style={{ flex: 1 }}>
-                  <text style={{ color: colors.text, fontSize: fontSize.md }}>{u.nickname}</text>
-                  <text style={{ color: colors.textFaint, fontSize: fontSize.xs }}>
+                  <text style={{ color: colors.text, fontSize: fontSize.md }} text-maxline="1">
+                    {u.nickname}
+                  </text>
+                  <text style={{ color: colors.textFaint, fontSize: fontSize.xs, marginTop: 2 }}>
                     {formatDate(u.joinedAt)} 加入
                   </text>
                 </view>

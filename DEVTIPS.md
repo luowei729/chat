@@ -85,6 +85,22 @@
   - 打全 4 架构 = 109MB；只打 `arm64-v8a + armeabi-v7a` = 50MB
   - 模拟器调试用 `-PabiFilters=x86_64` 覆盖
 
+## 十、Lynx 布局铁律（2026-10-29 真机验证，注册页竖排/空白教训）
+
+- **text 不要直接加 flex**：`text` 是行内元素，加 `flexGrow` 会塌陷成 1 字宽，
+  中文标题变成竖排。正确做法：外层 `view` 加 `flex:1`，内层 `text` 只管居中。
+- **header 必须三段式**：左 `headerSide(64)` + 中 `headerCenter(flex:1 居中)` + 右 `headerSide(64)`，
+  这样标题永远真正居中，不受左右按钮宽度影响。
+- **scroll-view 必须加 `scroll-orientation="vertical"`**，否则不滚动；
+  且样式必须 `flex:1`，否则高度为 0 整页空白。
+- **不要用 `gap`**：老版本 Lynx Yoga 不支持，一律用 `margin` 代替
+  （`marginRight/marginBottom/marginTop`）。
+- **`input` 只有 `default-value`**（非受控），没有 `value` 属性；
+  靠 `bindinput` 同步 state，提交后输入框不会自动清空（这是正常的）。
+- **伸缩一律用 `flex:1` 简写**，不要拆 `flexGrow/flexBasis`。
+- **默认邀请码**：`CHAT8888`（invite_codes 表，100 次，长期有效），
+  注册页默认填好，用户零门槛体验。
+
 - **黑屏排查套路**：
   1. `unzip -l app.apk | grep assets/` 确认 bundle 真的打进去了
   2. `head -c 20 bundle` 看是否二进制模板（`b\xb6"$0.2.0.0`），若是 `(()=>{` 说明是纯 JS，配置错了

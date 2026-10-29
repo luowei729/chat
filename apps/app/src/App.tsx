@@ -175,40 +175,44 @@ export function App() {
 
   /* ---------------- 渲染 ---------------- */
   if (!auth.bootstrapped) {
-    // 注意：根节点必须是 <page>，Lynx 用它提供全屏高度参照，
-    // 用 <view> 会导致 height:100% 塌陷为 0（表现为黑屏）
     return (
-      <page style={pageStyle}>
+      <view style={rootStyle}>
         <view style={commonStyles.center}>
           <text style={{ color: colors.textMuted, fontSize: fontSize.md }}>加载中…</text>
         </view>
-      </page>
+      </view>
     );
   }
 
   if (bootError) {
     return (
-      <page style={pageStyle}>
+      <view style={rootStyle}>
         <view style={commonStyles.center}>
           <text style={{ color: colors.danger, fontSize: fontSize.md }}>{bootError}</text>
         </view>
-      </page>
+      </view>
     );
   }
 
-  return (
-    <page style={pageStyle}>
-      {renderRoute(route.name, route.params)}
-    </page>
-  );
+  return <view style={rootStyle}>{renderRoute(route.name, route.params)}</view>;
 }
 
 /**
- * 根 page 样式
- * 说明：Lynx 的 <page> 默认全屏，但显式声明高度更稳妥，
- *      同时统一背景色，避免启动瞬间闪白。
+ * 根容器样式
+ * ============================================================
+ * 【重要】不要用 <page> 作根节点！
+ *
+ * LynxView 内部已经创建了 page 根节点，
+ * 我们再嵌套一个 <page style={{height:'100%'}}> 时，
+ * 它的高度没有参照父级（嵌套 page 不是全屏容器），
+ * Yoga 算出高度为 0，导致整页内容不可见 = 纯黑屏，
+ * 且不会抛任何错误（最难排查的一类问题）。
+ *
+ * 官方 hello-world 的 <page> 是**不带任何样式**的，
+ * 真正的全屏容器是内部 view（用 min-height:100vh 或 height:100%）。
+ * ============================================================
  */
-const pageStyle = {
+const rootStyle = {
   width: '100%',
   height: '100%',
   backgroundColor: colors.bg,

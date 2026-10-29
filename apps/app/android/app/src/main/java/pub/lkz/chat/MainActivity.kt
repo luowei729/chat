@@ -96,14 +96,28 @@ class MainActivity : AppCompatActivity() {
 
         /**
          * 渲染健康检查
-         * 说明：Lynx 渲染失败时不会抛异常，只会留一片黑屏。
-         * 这里延迟 3 秒检查 LynxView 是否真的挂上了子视图，
-         * 没有就显示可读的错误提示，避免用户只看到黑屏。
+         * ============================================================
+         * Lynx 渲染失败时不会抛异常，只会留一片黑屏，这是最难排查的故障。
+         * 这里延迟 3 秒做三重检查，任一异常都给出可读提示：
+         *   1. childCount == 0        → 模板没加载 / JS 崩了
+         *   2. height == 0 或 width == 0 → 布局塌陷（例如嵌套 page、flex 计算为 0）
+         *   3. 两者都正常              → 静默通过
+         * 同时把尺寸打进 Logcat，便于远程排查。
+         * ============================================================
          */
         lynxView.postDelayed({
-            if (lynxView.childCount == 0) {
-                android.util.Log.e("MainActivity", "LynxView 无子视图，渲染可能失败")
-                showFatalError("页面渲染失败\n请查看日志或重新安装应用")
+            val w = lynxView.width
+            val h = lynxView.height
+            val children = lynxView.childCount
+            android.util.Log.i(
+                "MainActivity",
+                "渲染检查: size=${w}x$h, childCount=$children",
+            )
+
+            if (children == 0) {
+                showFatalError("页面渲染失败：没有生成任何视图\n请查看日志或重新安装应用")
+            } else if (w == 0 || h == 0) {
+                showFatalError("页面渲染失败：容器尺寸为 ${w}x$h\n布局塌陷，请更新到最新版本")
             }
         }, 3000)
     }

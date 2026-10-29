@@ -59,21 +59,21 @@ export function LoginPage() {
 
   return (
     <view style={commonStyles.page}>
-      {/* 居中内容区：整块表单垂直居中，不再堆在顶部 */}
+      {/* 内容区：scroll 内容里不能用 flex:1 居中（会塌成 0 高），
+          用固定 paddingTop 留白 + 水平居中，保证任何高度下都可见 */}
       <scroll-view scroll-orientation="vertical" style={commonStyles.scroll}>
         <view
           style={{
-            flex: 1,
+            width: '100%',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
             paddingLeft: spacing.xl,
             paddingRight: spacing.xl,
-            paddingTop: spacing.xxxl,
+            paddingTop: 72,
             paddingBottom: spacing.xxxl,
           }}
         >
-          <view style={{ width: '100%', maxWidth: 380 }}>
+          <view style={{ width: '100%' }}>
             {/* 品牌区：Logo 圆 + 标题 + 副标题，全部居中 */}
             <view style={{ display: 'flex', alignItems: 'center', marginBottom: spacing.xxl }}>
               <view

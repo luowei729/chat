@@ -12,6 +12,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.lynx.tasm.LynxView
 import com.lynx.tasm.LynxViewBuilder
+import com.lynx.tasm.ThreadStrategyForRendering
 import com.lynx.tasm.provider.AbsTemplateProvider
 import com.lynx.xelement.XElementBehaviors
 import pub.lkz.chat.module.ChatHostModule
@@ -39,6 +40,9 @@ import java.io.IOException
 class MainActivity : AppCompatActivity() {
 
     private lateinit var lynxView: LynxView
+
+    /** 承载 LynxView 的容器，重试时需要清空重建 */
+    private lateinit var container: FrameLayout
 
     /** 记录上次按返回键的时间，用于「双击退出」 */
     private var lastBackPressedAt: Long = 0
@@ -70,40 +74,68 @@ class MainActivity : AppCompatActivity() {
         // 先申请权限，再创建界面：避免用户点录音时才发现没权限
         requestRuntimePermissions()
 
-        lynxView = createLynxView()
-
         // 用 FrameLayout 承载，方便后续叠加原生视图（如通话悬浮窗）
-        val container = FrameLayout(this).apply {
+        container = FrameLayout(this).apply {
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT,
             )
             // 内容延伸到状态栏下方（沉浸式），安全区由前端自己处理
             fitsSystemWindows = false
-            addView(
-                lynxView,
-                FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT,
-                    FrameLayout.LayoutParams.MATCH_PARENT,
-                ),
-            )
         }
 
         setContentView(container)
 
-        // 加载 bundle（第二个参数是初始数据 JSON 字符串，空串表示不传）
+        // 用官方推荐的线程策略加载；失败会自动降级重试另一种
+        loadWithStrategy(ThreadStrategyForRendering.MOST_ON_TASM, attempt = 1)
+    }
+
+    /**
+     * 加载 bundle 并自动验证，失败则切换线程策略重试
+     * ============================================================
+     * 为什么要做双策略重试：
+     * ReactLynx 是「主线程渲染 + 后台线程逻辑」的双线程架构，
+     * 需要 ThreadStrategyForRendering.MOST_ON_TASM（官方 Lynx Explorer 用这个）。
+     * 若宿主环境（部分 ROM / 硬件）不支持多线程策略，
+     * 就会静默黑屏且不抛异常。
+     *
+     * 这里先试 MOST_ON_TASM，2.5 秒内没渲染出内容就换成 ALL_ON_UI 重试，
+     * 两种策略都失败才提示用户，一次安装即可覆盖两种情况。
+     * ============================================================
+     */
+    private fun loadWithStrategy(
+        strategy: ThreadStrategyForRendering,
+        attempt: Int,
+    ) {
+        android.util.Log.i("MainActivity", "第 $attempt 次加载，线程策略=$strategy")
+
+        // 清掉上一次的视图，避免叠加
+        container.removeAllViews()
+        // 首次调用时 lynxView 还是 lateinit 未赋值，必须判空否则崩溃
+        if (this::lynxView.isInitialized) {
+            try {
+                lynxView.destroy()
+            } catch (e: Throwable) {
+                android.util.Log.w("MainActivity", "销毁旧 LynxView 失败", e)
+            }
+        }
+
+        lynxView = createLynxView(strategy)
+        container.addView(
+            lynxView,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT,
+            ),
+        )
+
+        // 第二个参数是初始数据 JSON 字符串，空串表示不传
         lynxView.renderTemplateUrl(BUNDLE_NAME, "")
 
         /**
          * 渲染健康检查
-         * ============================================================
-         * Lynx 渲染失败时不会抛异常，只会留一片黑屏，这是最难排查的故障。
-         * 这里延迟 3 秒做三重检查，任一异常都给出可读提示：
-         *   1. childCount == 0        → 模板没加载 / JS 崩了
-         *   2. height == 0 或 width == 0 → 布局塌陷（例如嵌套 page、flex 计算为 0）
-         *   3. 两者都正常              → 静默通过
-         * 同时把尺寸打进 Logcat，便于远程排查。
-         * ============================================================
+         * Lynx 渲染失败时不会抛异常，只会留一片黑屏。
+         * 延迟 2.5 秒检查：没子视图 / 尺寸为 0 都算失败。
          */
         lynxView.postDelayed({
             val w = lynxView.width
@@ -111,15 +143,24 @@ class MainActivity : AppCompatActivity() {
             val children = lynxView.childCount
             android.util.Log.i(
                 "MainActivity",
-                "渲染检查: size=${w}x$h, childCount=$children",
+                "渲染检查(第 $attempt 次): size=${w}x$h, childCount=$children, strategy=$strategy",
             )
 
-            if (children == 0) {
-                showFatalError("页面渲染失败：没有生成任何视图\n请查看日志或重新安装应用")
-            } else if (w == 0 || h == 0) {
-                showFatalError("页面渲染失败：容器尺寸为 ${w}x$h\n布局塌陷，请更新到最新版本")
+            val failed = children == 0 || w == 0 || h == 0
+            if (!failed) return@postDelayed
+
+            if (attempt == 1) {
+                // 第一次失败：换 ALL_ON_UI 再试
+                loadWithStrategy(ThreadStrategyForRendering.ALL_ON_UI, attempt = 2)
+            } else {
+                showFatalError(
+                    "页面渲染失败\n" +
+                        "两种线程策略均未渲染出内容\n" +
+                        "尺寸=${w}x$h, 子视图=$children\n" +
+                        "请把这段信息反馈给开发者",
+                )
             }
-        }, 3000)
+        }, 2500)
     }
 
     /**
@@ -129,11 +170,19 @@ class MainActivity : AppCompatActivity() {
      *   不加会导致登录页的 input 完全不可用；
      * - setTemplateProvider：从 assets 读取离线 bundle。
      */
-    private fun createLynxView(): LynxView {
+    private fun createLynxView(strategy: ThreadStrategyForRendering): LynxView {
         val builder = LynxViewBuilder()
 
         // 注册扩展元素（input / textarea / webview / video 等）
         builder.addBehaviors(XElementBehaviors().create())
+
+        /**
+         * 线程策略：ReactLynx 必须用多线程策略
+         * 官方 Lynx Explorer 使用 MOST_ON_TASM；
+         * 默认值 ALL_ON_UI 会把所有 JS 压到主线程，
+         * ReactLynx 的双线程协调失效 → 静默黑屏。
+         */
+        builder.setThreadStrategyForRendering(strategy)
 
         // 从 assets 读取 bundle：这是「内置离线包」的关键
         builder.setTemplateProvider(object : AbsTemplateProvider() {
@@ -229,6 +278,7 @@ class MainActivity : AppCompatActivity() {
      *      前端用 useLynxGlobalEventListener 监听 "hardwareBack" 事件后自行 pop。
      */
     private fun notifyFrontendBack() {
+        if (!this::lynxView.isInitialized) return
         try {
             val args = com.lynx.react.bridge.JavaOnlyArray()
             lynxView.sendGlobalEvent("hardwareBack", args)
@@ -266,17 +316,17 @@ class MainActivity : AppCompatActivity() {
     override fun onPause() {
         super.onPause()
         // 通知 Lynx 进入后台：前端可据此降低轮询频率
-        lynxView.onEnterBackground()
+        if (this::lynxView.isInitialized) lynxView.onEnterBackground()
     }
 
     override fun onResume() {
         super.onResume()
-        lynxView.onEnterForeground()
+        if (this::lynxView.isInitialized) lynxView.onEnterForeground()
     }
 
     override fun onDestroy() {
         // 必须销毁，否则 Lynx 内部线程与定时器会泄漏
-        lynxView.destroy()
+        if (this::lynxView.isInitialized) lynxView.destroy()
         // 清空静态引用，避免内存泄漏
         if (current === this) current = null
         super.onDestroy()

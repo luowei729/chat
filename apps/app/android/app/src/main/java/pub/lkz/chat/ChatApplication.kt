@@ -10,20 +10,22 @@ import com.lynx.service.log.LynxLogService
 import com.lynx.tasm.LynxEnv
 import com.lynx.tasm.service.LynxServiceCenter
 import org.webrtc.PeerConnectionFactory
+import pub.lkz.chat.module.ChatHostModule
 
 /**
  * ============================================================
  * 应用入口
- * ------------------------------------------------------------
+ * ============================================================
  * 启动顺序（顺序错了会崩溃或图片不显示）：
  *   1. Fresco 初始化
  *   2. 注册 Lynx 服务（图片/日志）
  *   3. LynxEnv.init
- *   4. 异步初始化 WebRTC
+ *   4. 注册自定义原生模块（ChatHost）
+ *   5. 异步初始化 WebRTC
  *
  * 为什么必须先 Fresco 再注册 LynxImageService：
  * LynxImageService 内部直接用 Fresco 的 ImagePipeline，
- * 若 Fresco 未初始化，<image> 元素会静默失败（图片不显示）。
+ * 若 Fresco 未初始化，image 元素会静默失败（图片不显示）。
  *
  * 为什么 WebRTC 异步初始化：
  * PeerConnectionFactory 创建约 100-200ms，放主线程会拖慢冷启动；
@@ -53,6 +55,7 @@ class ChatApplication : Application() {
 
         initLynxService()
         initLynxEnv()
+        registerNativeModules()
 
         // WebRTC 放后台线程，避免拖慢首屏
         Thread { initWebRtc() }.start()
@@ -88,6 +91,15 @@ class ChatApplication : Application() {
             LynxEnv.inst().enableDevtool(true)
             LynxEnv.inst().enableLogBox(true)
         }
+    }
+
+    /**
+     * 注册自定义原生模块
+     * 说明：必须在 LynxEnv.init 之后注册，
+     *      否则前端拿不到 NativeModules.ChatHost。
+     */
+    private fun registerNativeModules() {
+        LynxEnv.inst().registerModule("ChatHost", ChatHostModule::class.java)
     }
 
     /**

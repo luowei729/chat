@@ -7,7 +7,6 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
@@ -17,20 +16,21 @@ import pub.lkz.chat.R
 /**
  * ============================================================
  * 通话前台服务（锁屏不断线的关键）
- * ------------------------------------------------------------
+ * ============================================================
  * 为什么必须有它：
  * Android 8+ 之后，App 切到后台约 1 分钟就会被系统冻结，
  * WebRTC 的音频采集与网络连接会中断。只有前台服务能让
  * 进程在后台保持运行，从而支撑「锁屏通话」。
  *
- * Android 14 强制要求：
- * - 必须声明 foregroundServiceType="microphone"
- * - 必须持有 RECORD_AUDIO 与 FOREGROUND_SERVICE_MICROPHONE 权限
- * - 启动服务时必须在 5 秒内调用 startForeground
+ * Android 版本差异（必须逐版本处理，否则崩溃）：
+ *   API 26+  必须创建 NotificationChannel
+ *   API 29+  startForeground 支持第三个参数（服务类型）
+ *   API 30+  才有 FOREGROUND_SERVICE_TYPE_MICROPHONE 常量
+ *   API 34+  必须在清单声明 foregroundServiceType 且持有对应权限
  *
  * 使用流程：
- *   onCallStarted() → startForegroundService
- *   onCallEnded()   → stopSelf
+ *   ChatHostModule.startCallService()  -> startForegroundService
+ *   ChatHostModule.stopCallService()   -> stopSelf
  * ============================================================
  */
 class CallService : Service() {
@@ -38,6 +38,13 @@ class CallService : Service() {
     companion object {
         private const val CHANNEL_ID = "chat_call"
         private const val NOTIFICATION_ID = 2001
+
+        /**
+         * 通话中继类型：麦克风
+         * 说明：API 30 才有这个常量，所以用局部常量避免
+         *      在低版本设备上引用不存在的字段（NoSuchFieldError）。
+         */
+        private const val TYPE_MICROPHONE = 0x00000080
 
         /** 通话开始：启动前台服务 */
         fun start(context: Context) {
@@ -63,15 +70,16 @@ class CallService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // 必须在 5 秒内调用，否则系统抛异常
+        // 必须在 5 秒内调用 startForeground，否则系统抛 ANR
         val notification = buildNotification()
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE,
-            )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            // API 30+：可以声明服务类型，Android 14 起必须
+            startForeground(NOTIFICATION_ID, notification, TYPE_MICROPHONE)
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // API 29：三参数重载存在，但麦克风类型常量还没有，
+            // 传 0 表示不限定类型（系统按清单声明处理）
+            startForeground(NOTIFICATION_ID, notification, 0)
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }

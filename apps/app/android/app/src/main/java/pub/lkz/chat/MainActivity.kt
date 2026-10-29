@@ -6,6 +6,7 @@ import android.os.Build
 import android.os.Bundle
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -13,16 +14,17 @@ import com.lynx.tasm.LynxView
 import com.lynx.tasm.LynxViewBuilder
 import com.lynx.tasm.provider.AbsTemplateProvider
 import com.lynx.xelement.XElementBehaviors
+import pub.lkz.chat.module.ChatHostModule
 import java.io.IOException
 
 /**
  * ============================================================
  * 主界面：LynxView 宿主
- * ------------------------------------------------------------
+ * ============================================================
  * 职责：
  * 1. 创建 LynxView 并加载内置的 Lynx bundle；
  * 2. 申请运行时权限（麦克风、相机、通知）；
- * 3. 处理返回键（优先交给 Lynx 内部路由）。
+ * 3. 处理返回键（前端通过 ChatHost.setCanGoBack 告知路由深度）。
  *
  * 为什么用内置 bundle 而不是远程 URL：
  * 1. 离线可用，弱网下也能秒开；
@@ -38,16 +40,32 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var lynxView: LynxView
 
+    /** 记录上次按返回键的时间，用于「双击退出」 */
+    private var lastBackPressedAt: Long = 0
+
     companion object {
         /** bundle 文件名：CI 会把构建产物拷贝到 assets 下 */
         private const val BUNDLE_NAME = "chat.lynx.bundle"
 
         /** 权限请求码 */
         private const val REQ_PERMISSIONS = 1001
+
+        /** 双击退出的时间窗口（毫秒） */
+        private const val DOUBLE_BACK_INTERVAL = 2000L
+
+        /**
+         * 当前 Activity 实例
+         * 用途：原生模块（ChatHost.exitApp）需要拿到 Activity 才能 finish
+         * 注意：Activity 销毁时必须置空，否则内存泄漏
+         */
+        @Volatile
+        var current: MainActivity? = null
+            private set
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        current = this
 
         // 先申请权限，再创建界面：避免用户点录音时才发现没权限
         requestRuntimePermissions()
@@ -81,7 +99,7 @@ class MainActivity : AppCompatActivity() {
      * 创建 LynxView
      * 关键点：
      * - addBehaviors(XElementBehaviors)：注册 input/webview/video 等原生组件，
-     *   不加会导致登录页的 <input> 完全不可用；
+     *   不加会导致登录页的 input 完全不可用；
      * - setTemplateProvider：从 assets 读取离线 bundle。
      */
     private fun createLynxView(): LynxView {
@@ -142,15 +160,47 @@ class MainActivity : AppCompatActivity() {
 
     /**
      * 返回键处理
-     * 说明：Lynx 内部有自己的页面栈，优先让 Lynx 处理，
-     *      只有 Lynx 无法返回时才退出 App。
+     * ============================================================
+     * 逻辑：
+     *   1. 前端路由栈 > 1 → 交给前端返回（前端在 setCanGoBack 里已同步状态）
+     *      但 Lynx 没有同步的「执行返回」API，所以这里用另一种策略：
+     *      把返回事件通过 sendGlobalEvent 通知前端，由前端自己 pop 路由；
+     *   2. 前端在根页面 → 双击退出，防止误触直接关掉 App。
+     *
+     * 为什么用「双击退出」而不是直接退出：
+     * 聊天 App 用户经常在根页面误触返回键，
+     * 直接退出体验很差；双击退出是 Android 通用惯例。
+     * ============================================================
      */
     @Deprecated("Android 13+ 推荐用 OnBackPressedDispatcher")
     override fun onBackPressed() {
-        // goBack 返回 true 表示 Lynx 已消费该事件
-        val handled = lynxView.goBack()
-        if (!handled) {
-            super.onBackPressed()
+        // 前端可返回：把事件发给前端，由前端 pop 路由
+        if (ChatHostModule.isCanGoBack()) {
+            notifyFrontendBack()
+            return
+        }
+
+        // 根页面：双击退出
+        val now = System.currentTimeMillis()
+        if (now - lastBackPressedAt < DOUBLE_BACK_INTERVAL) {
+            finishAffinity()
+            return
+        }
+        lastBackPressedAt = now
+        Toast.makeText(this, "再按一次退出", Toast.LENGTH_SHORT).show()
+    }
+
+    /**
+     * 通知前端「按了返回键」
+     * 说明：Lynx 的 sendGlobalEvent 是单向通知，
+     *      前端用 useLynxGlobalEventListener 监听 "hardwareBack" 事件后自行 pop。
+     */
+    private fun notifyFrontendBack() {
+        try {
+            val args = com.lynx.react.bridge.JavaOnlyArray()
+            lynxView.sendGlobalEvent("hardwareBack", args)
+        } catch (e: Throwable) {
+            android.util.Log.w("MainActivity", "发送返回事件失败", e)
         }
     }
 
@@ -168,6 +218,8 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         // 必须销毁，否则 Lynx 内部线程与定时器会泄漏
         lynxView.destroy()
+        // 清空静态引用，避免内存泄漏
+        if (current === this) current = null
         super.onDestroy()
     }
 }

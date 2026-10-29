@@ -2,7 +2,7 @@
 <!--
   ============================================================
   Android 清单文件
-  ------------------------------------------------------------
+  ============================================================
   权限说明（缺一个都会导致对应功能静默失败）：
     INTERNET              网络请求与 WebSocket
     RECORD_AUDIO          语音消息录制 + 语音通话
@@ -21,17 +21,17 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- ---------- 网络 ---------- -->
+    <!-- ========== 网络 ========== -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
 
-    <!-- ---------- 麦克风与摄像头 ---------- -->
+    <!-- ========== 麦克风与摄像头 ========== -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.CAMERA" />
 
-    <!-- ---------- 存储（分版本声明） ---------- -->
+    <!-- ========== 存储（分版本声明） ========== -->
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
@@ -42,7 +42,7 @@
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
 
-    <!-- ---------- 锁屏通话保活 ---------- -->
+    <!-- ========== 锁屏通话保活 ========== -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" />

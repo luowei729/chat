@@ -119,6 +119,49 @@ jobs:
           distribution: temurin
           java-version: 17
 
+      # ---------- 3.5 资源文件预检 ----------
+      # XML 注释里禁止出现连续两个减号（`--`），
+      # 而中文注释常用的 `------` 分隔线正好会踩这个坑。
+      # Android 资源合并器只在 Gradle 构建时才报错，浪费 2 分钟，
+      # 这里提前用 Python 解析一遍，几秒内就能定位问题文件。
+      - name: 预检 Android XML 资源
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import sys
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          root = Path('apps/app/android')
+          if not root.exists():
+              print('未找到 Android 工程目录，跳过')
+              sys.exit(0)
+
+          failed = False
+          files = sorted(root.rglob('*.xml'))
+          print(f'检查 {len(files)} 个 XML 文件')
+
+          for f in files:
+              # 1. 语法合法性
+              try:
+                  ET.parse(f)
+              except Exception as e:
+                  print(f'::error file={f}::XML 语法错误: {e}')
+                  failed = True
+                  continue
+
+              # 2. 注释内不得含 '--'
+              text = f.read_text(encoding='utf-8')
+              import re
+              for m in re.finditer(r'<!--(.*?)-->', text, flags=re.S):
+                  if '--' in m.group(1):
+                      line = text[:m.start()].count('\n') + 1
+                      print(f'::error file={f},line={line}::XML 注释内禁止出现 "--"')
+                      failed = True
+
+          sys.exit(1 if failed else 0)
+          PY
+
       - name: 配置 Gradle 缓存
         uses: gradle/actions/setup-gradle@v4
         with:

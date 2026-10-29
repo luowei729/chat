@@ -1,0 +1,24 @@
+{
+  // ============================================================
+  // TypeScript 基础配置：所有子包继承本文件
+  // 说明：开启严格模式，保证前后端共用类型时不会出现隐式 any
+  // ============================================================
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "forceConsistentCasingInFileNames": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "declaration": false,
+    "sourceMap": true
+  }
+}

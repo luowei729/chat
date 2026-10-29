@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>chat</title>
+<style>
+  :root{color-scheme:dark}
+  body{margin:0;height:100vh;display:flex;align-items:center;justify-content:center;
+       background:#0b0d12;color:#e8ecf4;font:16px/1.7 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
+  .box{text-align:center;padding:32px}
+  .dot{width:10px;height:10px;border-radius:50%;background:#4f8cff;display:inline-block;margin:0 4px;
+       animation:p 1.2s ease-in-out infinite}
+  .dot:nth-child(2){animation-delay:.2s}.dot:nth-child(3){animation-delay:.4s}
+  @keyframes p{0%,100%{opacity:.25;transform:translateY(0)}50%{opacity:1;transform:translateY(-4px)}}
+  h1{font-size:20px;font-weight:600;margin:0 0 8px}
+  p{color:#8b95a8;margin:0;font-size:14px}
+</style>
+</head>
+<body>
+  <div class="box">
+    <h1>chat 正在升级</h1>
+    <p>全新版本部署中，请稍后访问</p>
+    <div style="margin-top:18px"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,52 @@
+# ============================================================
+# Git 忽略规则
+# ============================================================
+
+# 依赖
+node_modules/
+.pnpm-store/
+
+# 构建产物
+dist/
+build/
+*.tsbuildinfo
+.turbo/
+.rspeedy/
+
+# 环境变量（含密钥，禁止提交）
+.env
+.env.*
+!.env.example
+
+# 运行时数据
+runtime/
+*.log
+logs/
+
+# Android 原生工程生成物（保留源码，忽略构建输出）
+apps/app/android/.gradle/
+apps/app/android/build/
+apps/app/android/app/build/
+apps/app/android/local.properties
+apps/app/android/gradle/wrapper/gradle-wrapper.jar
+apps/app/android/app/src/main/assets/*.lynx.bundle
+
+# 桌面端
+apps/desktop/release/
+apps/desktop/out/
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# 安装包产物
+*.apk
+*.aab
+*.ipa
+*.hap
+*.dmg
+*.exe
+*.msi
+*.AppImage

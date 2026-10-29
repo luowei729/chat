@@ -1,0 +1,24 @@
+{
+  // ============================================================
+  // 客户端 TS 配置
+  // 说明：ReactLynx 使用 JSX，但目标不是 DOM 而是 Lynx 元素，
+  //      所以 jsxFactory 指向 @lynx-js/react 提供的运行时。
+  // ============================================================
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "target": "ES2020",
+    "lib": ["ES2020"],
+    "jsx": "react-jsx",
+    "jsxImportSource": "@lynx-js/react",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noEmit": true,
+    "types": [],
+    "baseUrl": ".",
+    "paths": {
+      "@chat/shared": ["../../packages/shared/src/index.ts"],
+      "@/*": ["src/*"]
+    }
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", "lynx.config.ts"]
+}

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  图标前景：白色对话气泡 + 圆点，象征聊天
+  安全区：自适应图标的前景应控制在中心 66dp 内（108dp 画布）
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 对话气泡主体 -->
+    <path
+        android:fillColor="#4F8CFF"
+        android:pathData="M30,34 h48 a10,10 0 0 1 10,10 v24 a10,10 0 0 1 -10,10 h-26 l-14,12 v-12 h-8 a10,10 0 0 1 -10,-10 v-24 a10,10 0 0 1 10,-10 z" />
+
+    <!-- 三个点：省略号，表示正在输入 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M44,56 m-4,0 a4,4 0 1,0 8,0 a4,4 0 1,0 -8,0" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,56 m-4,0 a4,4 0 1,0 8,0 a4,4 0 1,0 -8,0" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M64,56 m-4,0 a4,4 0 1,0 8,0 a4,4 0 1,0 -8,0" />
+</vector>

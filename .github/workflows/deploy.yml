@@ -1,0 +1,144 @@
+# ============================================================
+# 部署（GitHub Actions）
+# ------------------------------------------------------------
+# 触发：push 到 main 且改动涉及后端/前端
+# 流程：
+#   1. 在 Actions 机器上构建（服务器 2C1.8G 绝不编译）
+#   2. 通过 rsync + SSH 把产物推到服务器
+#   3. 在服务器上重启 systemd 服务
+#
+# 需要的 Secrets：
+#   SSH_HOST        服务器 IP
+#   SSH_USER        登录用户名（root）
+#   SSH_KEY         私钥内容
+#   SSH_PORT        SSH 端口（可选，默认 22）
+#   SERVER_ENV      服务端 .env 完整内容（含数据库密码等）
+# ============================================================
+
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/server/**'
+      - 'packages/shared/**'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: 部署到生产
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+
+      - name: 安装 Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 构建后端
+        run: pnpm --filter @chat/server build
+
+      # ---------- 准备部署包 ----------
+      # 只部署运行所需文件：编译产物 + package.json + 迁移文件
+      - name: 准备部署包
+        run: |
+          set -euo pipefail
+          mkdir -p deploy
+          cp -r apps/server/dist deploy/dist
+          cp apps/server/package.json deploy/
+          cp -r apps/server/drizzle deploy/drizzle
+          cp pnpm-lock.yaml deploy/ || true
+          echo "=== 部署包内容 ==="
+          du -sh deploy
+          ls deploy
+
+      # ---------- 配置 SSH ----------
+      - name: 配置 SSH
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          # 避免首次连接的主机指纹确认
+          ssh-keyscan -p "${{ secrets.SSH_PORT || 22 }}" -H "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      # ---------- 上传产物 ----------
+      - name: 上传构建产物
+        run: |
+          set -euo pipefail
+          rsync -avz --delete \
+            -e "ssh -p ${{ secrets.SSH_PORT || 22 }} -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no" \
+            deploy/ \
+            "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/opt/chat-server/"
+
+      # ---------- 写入环境变量 ----------
+      - name: 写入环境变量
+        run: |
+          set -euo pipefail
+          printf '%s' "${{ secrets.SERVER_ENV }}" > /tmp/server.env
+          scp -P "${{ secrets.SSH_PORT || 22 }}" -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no \
+            /tmp/server.env \
+            "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/opt/chat-server/.env"
+          # 敏感文件权限收紧
+          ssh -p "${{ secrets.SSH_PORT || 22 }}" -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no \
+            "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" \
+            "chmod 600 /opt/chat-server/.env"
+
+      # ---------- 安装依赖 + 迁移 + 重启 ----------
+      - name: 安装运行时依赖并重启
+        run: |
+          set -euo pipefail
+          ssh -p "${{ secrets.SSH_PORT || 22 }}" -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no \
+            "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" \
+            'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd /opt/chat-server
+
+          # 只装生产依赖：服务器内存小，不装 devDependencies
+          # 用 npm 而不是 pnpm，避免在服务器上额外装包管理器
+          npm install --omit=dev --no-audit --no-fund
+
+          # 执行数据库迁移（幂等，重复跑安全）
+          node dist/db/migrate.js || echo "迁移脚本未找到，跳过"
+
+          # 重启服务
+          systemctl restart chat-server
+          sleep 3
+
+          # 健康检查：失败则回滚提示
+          if curl -sf http://127.0.0.1:8787/api/health > /dev/null; then
+            echo "✅ 服务启动成功"
+            curl -s http://127.0.0.1:8787/api/health
+          else
+            echo "❌ 服务启动失败，最近日志："
+            journalctl -u chat-server -n 50 --no-pager
+            exit 1
+          fi
+          REMOTE
+
+      # ---------- 失败时通知 ----------
+      - name: 部署失败输出日志
+        if: failure()
+        run: |
+          ssh -p "${{ secrets.SSH_PORT || 22 }}" -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no \
+            "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" \
+            "journalctl -u chat-server -n 100 --no-pager" || true

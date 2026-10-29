@@ -1,0 +1,18 @@
+{
+  // ============================================================
+  // 服务端 TS 配置
+  // 说明：Node 22 原生支持 ESM，直接输出 ESM 产物；
+  //      workspace 内部包（@chat/shared）通过 bundler 解析 TS 源码。
+  // ============================================================
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node"],
+    "lib": ["ES2022"],
+    "noEmit": true
+  },
+  "include": ["src/**/*.ts"]
+}

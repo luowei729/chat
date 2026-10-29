@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 与前端 theme.ts 的 colors.bg 保持一致：#0b0d12 -->
+    <color name="background">#0b0d12</color>
+</resources>

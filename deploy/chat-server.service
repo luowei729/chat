@@ -1,0 +1,65 @@
+# ============================================================
+# chat-server systemd 服务
+# ------------------------------------------------------------
+# 安装：
+#   cp chat-server.service /etc/systemd/system/
+#   systemctl daemon-reload
+#   systemctl enable --now chat-server
+#
+# 说明：Node 只监听 127.0.0.1:8787，对外由 OpenResty 反代，
+#      因此不需要开放任何额外端口。
+# ============================================================
+
+[Unit]
+Description=chat server (Fastify + WebSocket)
+Documentation=https://chat.lkz.pub
+# 数据库在 Docker 里，需要等 Docker 起来
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/chat-server
+
+# 环境变量从 .env 读取（由 CI 注入，权限 600）
+EnvironmentFile=/opt/chat-server/.env
+
+# 启动命令
+ExecStart=/usr/bin/node dist/index.js
+
+# ---------- 崩溃自动重启 ----------
+Restart=always
+RestartSec=3
+# 5 分钟内重启超过 10 次则放弃（防止无限崩溃循环）
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+# ---------- 日志 ----------
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=chat-server
+
+# ---------- 安全加固 ----------
+# 只允许写上传目录与临时目录
+ReadWritePaths=/opt/chat-server /opt/1panel/www/sites/chat.lkz.pub/runtime/uploads /tmp
+# 禁止提权
+NoNewPrivileges=true
+PrivateTmp=true
+# 保护系统目录
+ProtectSystem=full
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+# ---------- 资源限制（2C1.8G 服务器，防止 OOM 拖垮整机） ----------
+MemoryMax=512M
+MemoryHigh=400M
+CPUQuota=150%
+
+# ---------- 文件句柄 ----------
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

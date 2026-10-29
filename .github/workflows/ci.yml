@@ -1,0 +1,70 @@
+# ============================================================
+# CI：类型检查 + 双端构建
+# ------------------------------------------------------------
+# 触发：push 到 main / 所有 PR
+# 作用：在合并前拦截类型错误与构建失败
+# 说明：服务器只有 2C1.8G，绝不在服务器跑这些，全部交给 GitHub Actions
+# ============================================================
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# 同一分支的新提交自动取消旧的运行，节省额度
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: 类型检查与构建
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+
+      - name: 安装 Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      # ---------- 共享契约层 ----------
+      - name: 类型检查 shared
+        run: pnpm --filter @chat/shared typecheck
+
+      # ---------- 后端 ----------
+      - name: 类型检查 server
+        run: pnpm --filter @chat/server typecheck
+
+      - name: 构建 server
+        run: pnpm --filter @chat/server build
+
+      # ---------- 客户端 ----------
+      - name: 类型检查 app
+        run: pnpm --filter @chat/app typecheck
+
+      - name: 构建 Lynx 客户端
+        run: pnpm --filter @chat/app build
+
+      # ---------- 产物留存（便于排查构建问题） ----------
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: lynx-bundle
+          path: apps/app/dist/
+          retention-days: 7

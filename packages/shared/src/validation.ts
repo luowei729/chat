@@ -134,8 +134,12 @@ export const updateMemberSchema = z.object({
 
 export const sendMessageSchema = z
   .object({
-    /** 客户端生成的 ULID，用于幂等去重 */
-    clientId: z.string().min(8).max(40),
+    /**
+     * 客户端生成的幂等 id，用于去重
+     * 上限 64：给各端留足空间（iOS/鸿蒙可能拼更长前缀），
+     * 只要保证唯一即可，长度本身不是安全边界。
+     */
+    clientId: z.string().min(8).max(64),
     type: z.enum(['text', 'image', 'video', 'audio', 'file', 'system', 'call']),
     text: z.string().max(8000, '消息最多 8000 字').optional(),
     attachmentIds: z.array(z.string().min(1)).max(10).optional(),

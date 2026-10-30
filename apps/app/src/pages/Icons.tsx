@@ -433,6 +433,85 @@ export function IconCheck(props: IconProps) {
   );
 }
 
+/**
+ * 消息状态勾（Telegram 语义）
+ * ============================================================
+ * 单勾 = 已送达服务器；双勾 = 对方已读。
+ *
+ * 【几何设计】
+ * 一个勾由两条圆头线段组成（下笔 45°、上挑 -48°），
+ * 双勾就是把第二个勾整体右移 6 个基准单位，
+ * 让它压在第一个勾的上挑段上 —— 和 TG 的叠压关系一致。
+ *
+ * 【为什么不复用 IconCheck】
+ * IconCheck 是 22px 的功能性按钮图标，笔画粗；
+ * 这里只有 12~14px，笔画必须细（2.6 基准），
+ * 且双勾需要控制整体宽度，否则时间行会被撑开。
+ */
+export function IconTicks(props: {
+  /** true = 双勾（已读） */
+  double?: boolean;
+  size?: number;
+  color?: string;
+  stroke?: number;
+}) {
+  const { double = false, size = 13, color = colors.textFaint, stroke = 2.6 } = props;
+  const w = sw(size, stroke);
+
+  /** 单个勾：在 24 基准里占 x∈[3,17]，y∈[11,21] */
+  const one = (dx: number, key: string) => (
+    <view
+      key={key}
+      style={{
+        position: 'absolute',
+        left: scale(size, dx),
+        top: 0,
+        width: `${size}px`,
+        height: `${size}px`,
+      }}
+    >
+      {/* 左侧短笔：45° 落下 */}
+      <view
+        style={{
+          position: 'absolute',
+          left: scale(size, 3),
+          top: scale(size, 12.5),
+          width: scale(size, 5.6),
+          height: w,
+          backgroundColor: color,
+          borderRadius: w,
+          transform: 'rotate(45deg)',
+          transformOrigin: 'left center',
+        }}
+      />
+      {/* 右侧长笔：-48° 上挑 */}
+      <view
+        style={{
+          position: 'absolute',
+          left: scale(size, 7.2),
+          top: scale(size, 16.4),
+          width: scale(size, 9.6),
+          height: w,
+          backgroundColor: color,
+          borderRadius: w,
+          transform: 'rotate(-48deg)',
+          transformOrigin: 'left center',
+        }}
+      />
+    </view>
+  );
+
+  // 双勾整体宽度：24 基准里 x∈[3,23] ≈ 20 个单位
+  const boxWidth = double ? `${((20 / 24) * size).toFixed(2)}px` : `${size}px`;
+
+  return (
+    <view style={{ width: boxWidth, height: `${size}px`, position: 'relative' }}>
+      {double ? one(0, 'first') : null}
+      {one(double ? 6 : 0, 'second')}
+    </view>
+  );
+}
+
 /** 叉号 */
 export function IconClose(props: IconProps) {
   const { size = 22, color = colors.text, stroke = 2.4 } = props;
@@ -481,32 +560,51 @@ export function IconAttach(props: IconProps) {
   const { size = 22, color = colors.text, stroke = 2 } = props;
   const w = sw(size, stroke);
 
+  /**
+   * 为什么是「圆圈 + 加号」而不是回形针
+   * ------------------------------------------------------------
+   * 回形针需要两段 180° 的圆弧互相穿插，在 24px 基准下
+   * 无论怎么调参数都会退化成两条断开的斜线（实测过）。
+   * 圆圈加号是微信 / iMessage 附件入口的通用语汇，
+   * 三笔画得出来、任何尺寸都清晰，信息传达没有损失。
+   */
   return (
     <view style={{ width: `${size}px`, height: `${size}px`, position: 'relative' }}>
+      {/* 外圈 */}
       <view
         style={{
           position: 'absolute',
-          left: scale(size, 9),
-          top: scale(size, 3.5),
-          width: scale(size, 11),
-          height: w,
-          backgroundColor: color,
-          borderRadius: w,
-          transform: 'rotate(115deg)',
-          transformOrigin: 'left center',
+          left: scale(size, 2.5),
+          top: scale(size, 2.5),
+          width: scale(size, 19),
+          height: scale(size, 19),
+          borderRadius: scale(size, 9.5),
+          borderWidth: w,
+          borderColor: color,
         }}
       />
+      {/* 横 */}
       <view
         style={{
           position: 'absolute',
-          left: scale(size, 4),
-          top: scale(size, 8),
-          width: scale(size, 8),
+          left: scale(size, 7),
+          top: `${size / 2 - parseFloat(w) / 2}px`,
+          width: scale(size, 10),
           height: w,
           backgroundColor: color,
           borderRadius: w,
-          transform: 'rotate(-65deg)',
-          transformOrigin: 'left center',
+        }}
+      />
+      {/* 竖 */}
+      <view
+        style={{
+          position: 'absolute',
+          left: `${size / 2 - parseFloat(w) / 2}px`,
+          top: scale(size, 7),
+          width: w,
+          height: scale(size, 10),
+          backgroundColor: color,
+          borderRadius: w,
         }}
       />
     </view>
@@ -695,6 +793,491 @@ export function IconSend(props: IconProps) {
           borderRadius: w,
           transform: 'rotate(-45deg)',
           transformOrigin: 'center top',
+        }}
+      />
+    </view>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* 聊天输入栏 / 附件面板                                                */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 电话听筒
+ * ============================================================
+ * 结构：一个转 -45° 的垂直「哑铃」
+ *   上耳罩 10×7、下耳罩 10×7、中间细杆 5×8
+ * 这是听筒轮廓的最低成本表达 —— 两端宽、中间细，
+ * 旋转后就是斜放的听筒，24px 下依旧可辨。
+ *
+ * 为什么不用单个圆角方块 + 缺口：
+ * 那样做出来更像「回形针」，而哑铃的三段式在缩放时
+ * 比例稳定，不会出现端点粘连。
+ */
+export function IconPhone(props: IconProps) {
+  const { size = 22, color = colors.text } = props;
+
+  /**
+   * 听筒 = 3/4 圆弧 + 两端大圆头耳罩
+   * ------------------------------------------------------------
+   * 试错记录（都是实测截图对比过的）：
+   *   1. 三段哑铃（上耳罩 / 中杆 / 下耳罩）→ 渲染成哑铃，不像听筒；
+   *   2. 两根臂拼 L 再转 -45°          → 内侧圆角形成凹口，变成心形；
+   *   3. 符号相反的短翼                 → 变成闪电；
+   *   4. 半圆弧 + 端帽                  → 变成笑脸。
+   *
+   * 最终方案：3/4 圆环（隐藏上边框）转 45°，两端各叠一个小圆把
+   * 切角磨圆。圆弧本身就是听筒握柄，开口朝右上即握持方向；
+   * 端帽不能再大，否则两个圆会喧宾夺主，整体读成「刷新/重载」。
+   *
+   * 几何以 24 为基准：环外径 18、环心 (12,12)、描边 3.2、端帽半径 2.8。
+   */
+  const u = (v: number) => scale(size, v);
+  const midR = 7.4;
+  // 端帽只用来把切角磨圆，不做耳罩：大耳罩会让整体像「刷新」图标
+  const capR = 1.7;
+  // 隐藏上边框后，两个端点在垂直于竖直轴 ±45° 的位置
+  const ends = [
+    { x: 12 - midR * 0.707, y: 12 - midR * 0.707 },
+    { x: 12 + midR * 0.707, y: 12 - midR * 0.707 },
+  ];
+
+  return (
+    <view style={{ width: `${size}px`, height: `${size}px`, position: 'relative' }}>
+      <view
+        style={{
+          position: 'absolute',
+          left: 0,
+          top: 0,
+          width: `${size}px`,
+          height: `${size}px`,
+          transform: 'rotate(45deg)',
+        }}
+      >
+        {/* 握柄：3/4 圆环 */}
+        <view
+          style={{
+            position: 'absolute',
+            left: u(3),
+            top: u(3),
+            width: u(18),
+            height: u(18),
+            borderRadius: u(9),
+            borderWidth: u(3.2),
+            borderColor: color,
+            borderTopColor: 'transparent',
+          }}
+        />
+        {/* 两端耳罩 */}
+        {ends.map((e, i) => (
+          <view
+            key={`ear${i}`}
+            style={{
+              position: 'absolute',
+              left: u(e.x - capR),
+              top: u(e.y - capR),
+              width: u(capR * 2),
+              height: u(capR * 2),
+              borderRadius: u(capR),
+              backgroundColor: color,
+            }}
+          />
+        ))}
+      </view>
+    </view>
+  );
+}
+
+/** 键盘：圆角外框 + 3×2 按键点 + 空格条 */
+export function IconKeyboard(props: IconProps) {
+  const { size = 22, color = colors.text, stroke = 1.8 } = props;
+  const w = sw(size, stroke);
+  const dot = (l: number, t: number, key: string) => (
+    <view
+      key={key}
+      style={{
+        position: 'absolute',
+        left: scale(size, l),
+        top: scale(size, t),
+        width: scale(size, 2.4),
+        height: scale(size, 2.4),
+        borderRadius: scale(size, 1.2),
+        backgroundColor: color,
+      }}
+    />
+  );
+
+  return (
+    <view style={{ width: `${size}px`, height: `${size}px`, position: 'relative' }}>
+      <view
+        style={{
+          position: 'absolute',
+          left: scale(size, 2),
+          top: scale(size, 6),
+          width: scale(size, 20),
+          height: scale(size, 12),
+          borderRadius: scale(size, 3),
+          borderWidth: w,
+          borderColor: color,
+        }}
+      />
+      {dot(6, 9.5, 'd1')}
+      {dot(10.8, 9.5, 'd2')}
+      {dot(15.6, 9.5, 'd3')}
+      {dot(8.4, 13.4, 'd4')}
+      {dot(13.2, 13.4, 'd5')}
+    </view>
+  );
+}
+
+/**
+ * 麦克风（输入栏语音按钮）
+ * 与 IconMic 的区别：这里不画底部支架，只保留话筒本体，
+ * 避免 20px 下横线糊成一团。
+ */
+export function IconVoice(props: IconProps) {
+  const { size = 22, color = colors.text, stroke = 2 } = props;
+  const w = sw(size, stroke);
+
+  return (
+    <view style={{ width: `${size}px`, height: `${size}px`, position: 'relative' }}>
+      <view
+        style={{
+          position: 'absolute',
+          left: scale(size, 9),
+          top: scale(size, 3),
+          width: scale(size, 6),
+          height: scale(size, 11),
+          borderRadius: scale(size, 3),
+          borderWidth: w,
+          borderColor: color,
+        }}
+      />
+      {/* 下半段托架：半圆 */}
+      <view
+        style={{
+          position: 'absolute',
+          left: scale(size, 5.5),
+          top: scale(size, 9),
+          width: scale(size, 13),
+          height: scale(size, 6.5),
+          borderWidth: w,
+          borderTopWidth: 0,
+          borderColor: color,
+          borderBottomLeftRadius: scale(size, 6.5),
+          borderBottomRightRadius: scale(size, 6.5),
+        }}
+      />
+      <view
+        style={{
+          position: 'absolute',
+          left: scale(size, 11),
+          top: scale(size, 16),
+          width: w,
+          height: scale(size, 4),
+          backgroundColor: color,
+          borderRadius: w,
+        }}
+      />
+    </view>
+  );
+}
+
+/** 照片：圆角外框 + 太阳 + 山脊 */
+export function IconPhoto(props: IconProps) {
+  const { size = 22, color = colors.text, stroke = 1.8 } = props;
+  const w = sw(size, stroke);
+
+  return (
+    <view style={{ width: `${size}px`, height: `${size}px`, position: 'relative' }}>
+      <view
+        style={{
+          position: 'absolute',
+          left: scale(size, 2.5),
+          top: scale(size, 4.5),
+          width: scale(size, 19),
+          height: scale(size, 15),
+          borderRadius: scale(size, 3),
+          borderWidth: w,
+          borderColor: color,
+        }}
+      />
+      {/* 太阳 */}
+      <view
+        style={{
+          position: 'absolute',
+          left: scale(size, 6.5),
+          top: scale(size, 8),
+          width: scale(size, 3.2),
+          height: scale(size, 3.2),
+          borderRadius: scale(size, 1.6),
+          backgroundColor: color,
+        }}
+      />
+      {/* 山脊：两条 45° 短线拼成折线 */}
+      <view
+        style={{
+          position: 'absolute',
+          left: scale(size, 11),
+          top: scale(size, 12.2),
+          width: scale(size, 5.2),
+          height: w,
+          backgroundColor: color,
+          borderRadius: w,
+          transform: 'rotate(-42deg)',
+          transformOrigin: 'left center',
+        }}
+      />
+      <view
+        style={{
+          position: 'absolute',
+          left: scale(size, 14.6),
+          top: scale(size, 8.8),
+          width: scale(size, 6),
+          height: w,
+          backgroundColor: color,
+          borderRadius: w,
+          transform: 'rotate(40deg)',
+          transformOrigin: 'left center',
+        }}
+      />
+    </view>
+  );
+}
+
+/** 相机：机身 + 顶部取景凸起 + 镜头圈 */
+export function IconCamera(props: IconProps) {
+  const { size = 22, color = colors.text, stroke = 1.8 } = props;
+  const w = sw(size, stroke);
+
+  return (
+    <view style={{ width: `${size}px`, height: `${size}px`, position: 'relative' }}>
+      {/* 顶部取景凸起 */}
+      <view
+        style={{
+          position: 'absolute',
+          left: scale(size, 8.5),
+          top: scale(size, 3.5),
+          width: scale(size, 7),
+          height: scale(size, 3),
+          borderWidth: w,
+          borderBottomWidth: 0,
+          borderColor: color,
+          borderTopLeftRadius: scale(size, 2),
+          borderTopRightRadius: scale(size, 2),
+        }}
+      />
+      {/* 机身 */}
+      <view
+        style={{
+          position: 'absolute',
+          left: scale(size, 2.5),
+          top: scale(size, 6),
+          width: scale(size, 19),
+          height: scale(size, 13.5),
+          borderRadius: scale(size, 3),
+          borderWidth: w,
+          borderColor: color,
+        }}
+      />
+      {/* 镜头 */}
+      <view
+        style={{
+          position: 'absolute',
+          left: scale(size, 8.5),
+          top: scale(size, 9),
+          width: scale(size, 7),
+          height: scale(size, 7),
+          borderRadius: scale(size, 3.5),
+          borderWidth: w,
+          borderColor: color,
+        }}
+      />
+    </view>
+  );
+}
+
+/** 摄像机：机身 + 右侧三角 */
+export function IconVideo(props: IconProps) {
+  const { size = 22, color = colors.text, stroke = 1.8 } = props;
+  const w = sw(size, stroke);
+
+  return (
+    <view style={{ width: `${size}px`, height: `${size}px`, position: 'relative' }}>
+      <view
+        style={{
+          position: 'absolute',
+          left: scale(size, 2),
+          top: scale(size, 5.5),
+          width: scale(size, 13),
+          height: scale(size, 13),
+          borderRadius: scale(size, 3),
+          borderWidth: w,
+          borderColor: color,
+        }}
+      />
+      {/* 右侧出带：用两条斜线围出三角形，规避 border 三角形在各端的差异 */}
+      <view
+        style={{
+          position: 'absolute',
+          left: scale(size, 16),
+          top: scale(size, 8.1),
+          width: scale(size, 6),
+          height: w,
+          backgroundColor: color,
+          borderRadius: w,
+          transform: 'rotate(-40deg)',
+          transformOrigin: 'left center',
+        }}
+      />
+      <view
+        style={{
+          position: 'absolute',
+          left: scale(size, 16),
+          top: scale(size, 15.9),
+          width: scale(size, 6),
+          height: w,
+          backgroundColor: color,
+          borderRadius: w,
+          transform: 'rotate(40deg)',
+          transformOrigin: 'left center',
+        }}
+      />
+      <view
+        style={{
+          position: 'absolute',
+          left: scale(size, 21),
+          top: scale(size, 11.4),
+          width: w,
+          height: scale(size, 1.2),
+          backgroundColor: color,
+          borderRadius: w,
+        }}
+      />
+    </view>
+  );
+}
+
+/** 文档：矩形 + 右上折角 */
+export function IconFile(props: IconProps) {
+  const { size = 22, color = colors.text, stroke = 1.8 } = props;
+  const w = sw(size, stroke);
+
+  return (
+    <view style={{ width: `${size}px`, height: `${size}px`, position: 'relative' }}>
+      <view
+        style={{
+          position: 'absolute',
+          left: scale(size, 5),
+          top: scale(size, 2.5),
+          width: scale(size, 14),
+          height: scale(size, 19),
+          borderRadius: scale(size, 2.5),
+          borderWidth: w,
+          borderColor: color,
+        }}
+      />
+      {/* 折角 */}
+      <view
+        style={{
+          position: 'absolute',
+          left: scale(size, 13),
+          top: scale(size, 2.6),
+          width: scale(size, 5.6),
+          height: scale(size, 5.6),
+          borderLeftWidth: w,
+          borderBottomWidth: w,
+          borderColor: color,
+          borderBottomLeftRadius: scale(size, 1.5),
+        }}
+      />
+      {/* 文字行 */}
+      <view
+        style={{
+          position: 'absolute',
+          left: scale(size, 7.8),
+          top: scale(size, 12.5),
+          width: scale(size, 8),
+          height: w,
+          backgroundColor: color,
+          borderRadius: w,
+        }}
+      />
+      <view
+        style={{
+          position: 'absolute',
+          left: scale(size, 7.8),
+          top: scale(size, 16),
+          width: scale(size, 5.5),
+          height: w,
+          backgroundColor: color,
+          borderRadius: w,
+        }}
+      />
+    </view>
+  );
+}
+
+/** 播放三角（语音条左侧） */
+export function IconPlay(props: IconProps) {
+  const { size = 14, color = colors.text } = props;
+
+  return (
+    <view style={{ width: `${size}px`, height: `${size}px`, position: 'relative' }}>
+      <view
+        style={{
+          position: 'absolute',
+          left: scale(size, 8),
+          top: scale(size, 5),
+          width: scale(size, 12),
+          height: scale(size, 12),
+          borderTopWidth: scale(size, 6),
+          borderBottomWidth: scale(size, 6),
+          borderLeftWidth: scale(size, 10),
+          borderTopColor: 'transparent',
+          borderBottomColor: 'transparent',
+          borderLeftColor: color,
+          borderTopRightRadius: scale(size, 1.5),
+          borderBottomRightRadius: scale(size, 1.5),
+        }}
+      />
+    </view>
+  );
+}
+
+/** 暂停（两竖条） */
+export function IconPause(props: IconProps) {
+  const { size = 14, color = colors.text } = props;
+  const barW = scale(size, 3.2);
+
+  return (
+    <view
+      style={{
+        width: `${size}px`,
+        height: `${size}px`,
+        position: 'relative',
+        display: 'flex',
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <view
+        style={{
+          width: barW,
+          height: scale(size, 10),
+          backgroundColor: color,
+          borderRadius: scale(size, 1),
+          marginRight: scale(size, 2),
+        }}
+      />
+      <view
+        style={{
+          width: barW,
+          height: scale(size, 10),
+          backgroundColor: color,
+          borderRadius: scale(size, 1),
         }}
       />
     </view>

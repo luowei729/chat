@@ -16,6 +16,7 @@ import { acceptFriend, rejectFriend } from '../api/index.js';
 import { pop, push } from '../router.js';
 import { refreshFriends, useFriends } from '../store/friends.js';
 import { colors, commonStyles, fontSize, radius, spacing } from '../theme.js';
+import { IconBack } from './Icons.js';
 
 export function FriendRequestsPage() {
   const { requests, loaded } = useFriends();
@@ -68,10 +69,11 @@ export function FriendRequestsPage() {
     <view style={commonStyles.page}>
       {/* 顶部栏 */}
       <view style={commonStyles.header}>
-        <view style={commonStyles.headerSide}>
-          <text style={{ color: colors.primary, fontSize: fontSize.md }} bindtap={pop}>
-            返回
-          </text>
+        <view
+          style={{ ...commonStyles.headerSide, justifyContent: 'center' }}
+          bindtap={pop}
+        >
+          <IconBack size={22} color={colors.text} />
         </view>
         <view style={commonStyles.headerCenter}>
           <text style={commonStyles.headerTitle}>新的朋友</text>
@@ -79,12 +81,12 @@ export function FriendRequestsPage() {
         <view style={commonStyles.headerSide} />
       </view>
 
-      {/* 分区切换 */}
+      {/* 分区切换 —— iOS 分段控件：灰底轨道 + 选中态白色滑块，不用描边 */}
       <view
         style={{
           width: '100%',
           display: 'flex',
-          flexDirection: 'row',
+          flexDirection: 'column',
           paddingLeft: spacing.lg,
           paddingRight: spacing.lg,
           paddingTop: spacing.md,
@@ -92,52 +94,66 @@ export function FriendRequestsPage() {
       >
         <view
           style={{
-            width: '48%',
-            height: '40px',
-            borderRadius: radius.md,
-            backgroundColor: tab === 'incoming' ? colors.primarySoft : 'transparent',
-            borderWidth: '1px',
-            borderColor: tab === 'incoming' ? colors.primary : colors.cardBorder,
+            width: '100%',
+            height: '34px',
             display: 'flex',
             flexDirection: 'row',
             alignItems: 'center',
-            justifyContent: 'center',
-            marginRight: '4%',
+            backgroundColor: colors.surfaceAlt,
+            borderRadius: radius.sm,
+            paddingLeft: '3px',
+            paddingRight: '3px',
           }}
-          bindtap={() => setTab('incoming')}
         >
-          <text
+          <view
             style={{
-              color: tab === 'incoming' ? colors.primary : colors.textMuted,
-              fontSize: fontSize.sm,
+              width: '48.8%',
+              height: '28px',
+              borderRadius: radius.xs,
+              backgroundColor:
+                tab === 'incoming' ? colors.cardElevated : 'transparent',
+              display: 'flex',
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
             }}
+            bindtap={() => setTab('incoming')}
           >
-            收到的（{String(requests.incoming.length)}）
-          </text>
-        </view>
-        <view
-          style={{
-            width: '48%',
-            height: '40px',
-            borderRadius: radius.md,
-            backgroundColor: tab === 'outgoing' ? colors.primarySoft : 'transparent',
-            borderWidth: '1px',
-            borderColor: tab === 'outgoing' ? colors.primary : colors.cardBorder,
-            display: 'flex',
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-          bindtap={() => setTab('outgoing')}
-        >
-          <text
+            <text
+              style={{
+                color: tab === 'incoming' ? colors.text : colors.textMuted,
+                fontSize: fontSize.sm,
+                fontWeight: tab === 'incoming' ? '600' : '400',
+              }}
+            >
+              收到的 {String(requests.incoming.length)}
+            </text>
+          </view>
+          <view
             style={{
-              color: tab === 'outgoing' ? colors.primary : colors.textMuted,
-              fontSize: fontSize.sm,
+              width: '48.8%',
+              height: '28px',
+              marginLeft: '1.5%',
+              borderRadius: radius.xs,
+              backgroundColor:
+                tab === 'outgoing' ? colors.cardElevated : 'transparent',
+              display: 'flex',
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
             }}
+            bindtap={() => setTab('outgoing')}
           >
-            发出的（{String(requests.outgoing.length)}）
-          </text>
+            <text
+              style={{
+                color: tab === 'outgoing' ? colors.text : colors.textMuted,
+                fontSize: fontSize.sm,
+                fontWeight: tab === 'outgoing' ? '600' : '400',
+              }}
+            >
+              发出的 {String(requests.outgoing.length)}
+            </text>
+          </view>
         </view>
       </view>
 

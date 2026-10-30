@@ -13,8 +13,10 @@
 import { useEffect, useState } from '@lynx-js/react';
 import { getIceConfig, getMe } from './api/index.js';
 import { clearTokens, getAccessToken, getRefreshToken, onAuthStateChange } from './api/client.js';
+import { hydrateStorage } from './storage.js';
 import * as ws from './api/ws.js';
 import { setBootstrapped, setUser, useAuth } from './store/auth.js';
+import { setMemberRead } from './store/reads.js';
 import {
   appendMessage,
   applyNewMessage,
@@ -67,6 +69,8 @@ export function App() {
     });
 
     void (async () => {
+      // 先把原生持久化的令牌灌进内存，否则重启后会被误判为未登录
+      await hydrateStorage();
       const hasToken = !!getAccessToken() || !!getRefreshToken();
       if (!hasToken) {
         setBootstrapped();
@@ -124,6 +128,11 @@ export function App() {
       removeMessage(msg.conversationId, msg.messageId);
     });
 
+    // 已读回执：把对方的已读水位推进，双勾即时点亮
+    const offRead = ws.on('read.updated', (msg) => {
+      setMemberRead(msg.conversationId, msg.userId, msg.seq);
+    });
+
     // 会话更新（别人新建会话、成员变动）
     const offConvNew = ws.on('conversation.new', () => {
       void import('./api/index.js')
@@ -171,6 +180,7 @@ export function App() {
     return () => {
       offNew();
       offDeleted();
+      offRead();
       offConvNew();
       offPresence();
       offIncoming();

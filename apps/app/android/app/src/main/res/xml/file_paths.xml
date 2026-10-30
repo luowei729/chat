@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  FileProvider 路径声明
+
+  用途有两个：
+    1. 相机拍照 / 录像的输出位置。Android 7 之后 file 协议外传会抛
+       FileUriExposedException，必须走 Provider；
+    2. 录音文件存放，上传时需要可读 Uri。
+
+  cache 目录系统会自动清理，适合临时产物；
+  files 目录用于录音这类需要稍长时间存活的文件。
+
+  注意：XML 注释内不允许出现连续两个减号，故此处不用分隔线。
+-->
+<paths>
+    <!-- 相机临时输出 -->
+    <cache-path
+        name="media_cache"
+        path="media/" />
+
+    <!-- 录音与下载产物 -->
+    <files-path
+        name="media_files"
+        path="media/" />
+</paths>

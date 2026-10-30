@@ -64,6 +64,19 @@
         android:usesCleartextTraffic="false"
         tools:targetApi="34">
 
+        <!--
+          相机页：微信式短按拍照 / 长按录像 / 闪光灯
+          必须 exported=false —— 只允许应用内启动，
+          防止外部应用拉起相机页绕过授权。
+        -->
+        <activity
+            android:name=".media.CameraActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.Chat.Camera"
+            android:windowSoftInputMode="stateAlwaysHidden" />
+
         <activity
             android:name=".MainActivity"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|uiMode"
@@ -76,6 +89,20 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!--
+          FileProvider：拍照/录像产物通过 content:// 共享给上传模块。
+          Android 7 之后禁止 file:// 外传，必须走 Provider。
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
         <!--
           通话前台服务：锁屏后保持麦克风与网络连接

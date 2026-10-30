@@ -10,8 +10,29 @@
  * ============================================================
  */
 
+import { getLynx } from './platform/globals.js';
+
+/** 源站（不带 /api）：媒体地址、下载链接都基于它拼 */
+export const ORIGIN = 'https://chat.lkz.pub';
+
 /** 服务端基址：所有 REST 接口的前缀 */
-export const API_BASE = 'https://chat.lkz.pub/api';
+export const API_BASE = `${ORIGIN}/api`;
+
+/**
+ * 把服务端返回的媒体相对路径转成可直接渲染的绝对地址
+ * ------------------------------------------------------------
+ * 服务端下发的是 `/api/media/xxx?e=..&s=..`（省流量、便于换域名），
+ * 但 Lynx 的 <image> 与原生播放器都要求绝对 URL，
+ * 相对路径会静默加载失败（表现为蓝色空气泡，不报错）。
+ *
+ * 已经是 http(s) 的原样返回，便于将来切 CDN。
+ */
+export function mediaUrl(path: string | null | undefined): string {
+  if (!path) return '';
+  if (path.startsWith('http://') || path.startsWith('https://')) return path;
+  if (path.startsWith('//')) return `https:${path}`;
+  return path.startsWith('/') ? `${ORIGIN}${path}` : `${ORIGIN}/${path}`;
+}
 
 /** WebSocket 地址：实时消息与通话信令 */
 export const WS_URL = 'wss://chat.lkz.pub/ws';
@@ -28,9 +49,10 @@ export const APP_VERSION = '2.0.0';
  *      这里先用编译期注入的方式区分（构建时由 Rspeedy 替换）。
  */
 export const PLATFORM = (() => {
-  // Lynx 运行时注入的全局对象，存在说明在原生 LynxView 中
-  const g = globalThis as unknown as { lynx?: { os?: string } };
-  const os = g.lynx?.os?.toLowerCase();
+  // 注意：lynx 是 Lynx 注入的**裸全局**，不在 globalThis 上，
+  // 必须经 getLynx() 取；用 globalThis.lynx 会恒为 undefined，
+  // 导致平台判定永远落到 'web'。
+  const os = (getLynx()?.['os'] as string | undefined)?.toLowerCase();
   if (os === 'android') return 'android' as const;
   if (os === 'ios') return 'ios' as const;
   if (os === 'harmony' || os === 'ohos') return 'harmony' as const;

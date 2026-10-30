@@ -14,6 +14,7 @@ import { createDirect, createGroup, searchUsers } from '../api/index.js';
 import { ApiError } from '../api/client.js';
 import { pop, push } from '../router.js';
 import { colors, commonStyles, fontSize, radius, spacing } from '../theme.js';
+import { IconBack } from './Icons.js';
 
 export function NewChatPage() {
   const [keyword, setKeyword] = useState('');
@@ -99,10 +100,11 @@ export function NewChatPage() {
     <view style={commonStyles.page}>
       {/* 顶部栏：三段式居中 */}
       <view style={commonStyles.header}>
-        <view style={commonStyles.headerSide}>
-          <text style={{ color: colors.primary, fontSize: fontSize.md }} bindtap={pop}>
-            返回
-          </text>
+        <view
+          style={{ ...commonStyles.headerSide, justifyContent: 'center' }}
+          bindtap={pop}
+        >
+          <IconBack size={22} color={colors.text} />
         </view>
         <view style={commonStyles.headerCenter}>
           <text style={commonStyles.headerTitle}>{groupMode ? '创建群聊' : '发起聊天'}</text>

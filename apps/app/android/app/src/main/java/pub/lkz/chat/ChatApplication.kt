@@ -12,6 +12,8 @@ import com.lynx.service.http.LynxHttpService
 import com.lynx.tasm.LynxEnv
 import com.lynx.tasm.service.LynxServiceCenter
 import org.webrtc.PeerConnectionFactory
+import pub.lkz.chat.media.ChatMediaModule
+import pub.lkz.chat.media.ChatStoreModule
 import pub.lkz.chat.module.ChatHostModule
 import java.io.File
 import java.text.SimpleDateFormat
@@ -142,6 +144,13 @@ class ChatApplication : Application() {
     /** 注册自定义原生模块（供前端调用返回键/退出/通话服务） */
     private fun registerNativeModules() {
         LynxEnv.inst().registerModule("ChatHost", ChatHostModule::class.java)
+        // 媒体能力：选图/拍照/录像/选文件/录音/播放/上传
+        // 与前端 src/platform/media.ts 的方法名一一对应，
+        // iOS/HarmonyOS 按同一契约实现即可，前端无需改动
+        LynxEnv.inst().registerModule("ChatMedia", ChatMediaModule::class.java)
+        // 键值存储：Lynx 引擎本身没有 Storage API，令牌/主题/草稿
+        // 必须靠原生持久化，否则每次重启都要重新登录
+        LynxEnv.inst().registerModule("ChatStore", ChatStoreModule::class.java)
     }
 
     /**

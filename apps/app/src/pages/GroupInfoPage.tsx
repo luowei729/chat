@@ -27,7 +27,7 @@ import { pop, reset } from '../router.js';
 import { useAuth } from '../store/auth.js';
 import { refreshFriends, useFriends } from '../store/friends.js';
 import { colors, commonStyles, fontSize, radius, spacing } from '../theme.js';
-import { IconChevron } from './Icons.js';
+import { IconBack, IconChevron } from './Icons.js';
 
 /** 成员每页展示数 */
 const MEMBER_PAGE = 10;
@@ -148,10 +148,11 @@ export function GroupInfoPage(props: { conversationId: string; title?: string })
     <view style={commonStyles.page}>
       {/* 顶部栏 */}
       <view style={commonStyles.header}>
-        <view style={commonStyles.headerSide}>
-          <text style={{ color: colors.primary, fontSize: fontSize.md }} bindtap={pop}>
-            返回
-          </text>
+        <view
+          style={{ ...commonStyles.headerSide, justifyContent: 'center' }}
+          bindtap={pop}
+        >
+          <IconBack size={22} color={colors.text} />
         </view>
         <view style={commonStyles.headerCenter}>
           <text style={commonStyles.headerTitle}>群信息</text>

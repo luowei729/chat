@@ -75,6 +75,32 @@ export function clearTokens(): void {
   authStateHandler?.(false);
 }
 
+/**
+ * 生成消息幂等 id
+ * ------------------------------------------------------------
+ * 服务端约束：8 ~ 40 字符（见 sendMessageSchema）。
+ * 旧实现用 `${userId}-${timestamp}-${random}`：
+ *   userId 是 26 位 ULID，加上分隔符与时间戳后共 42 字符，
+ *   直接触发「输入内容不合法」，**所有客户端发出的消息全部失败**。
+ *
+ * 这里改成定长 24 字符：
+ *   8 位 base36 时间戳（约 2084 年前不重复）
+ * + 6 位随机
+ * + 8 位用户尾号（便于服务端日志排查是谁发的，且保证同毫秒内不同用户不撞）
+ * 完全落在 8~40 区间内，且碰撞概率低于 1/2^31。
+ */
+export function newClientId(): string {
+  const ts = Date.now().toString(36).slice(-8);
+  const rand = Math.random().toString(36).slice(2, 8).padEnd(6, '0');
+  const uid = (currentUserIdForClientId() ?? '').slice(-8).padStart(8, '0');
+  return `${ts}${rand}${uid}`;
+}
+
+/** 从存储里取当前用户 id（避免与 store/auth 循环依赖） */
+function currentUserIdForClientId(): string | null {
+  return storage.getItem(storage.StorageKey.USER_ID);
+}
+
 /** 设备 id：首次启动生成并持久化，用于多端登录管理 */
 export function getDeviceId(): string {
   const existing = storage.getItem(storage.StorageKey.DEVICE_ID);
@@ -160,6 +186,20 @@ async function ensureFreshToken(): Promise<void> {
   if (!ok) {
     clearTokens();
   }
+}
+
+/**
+ * 取可用于自定义请求的鉴权头
+ * ------------------------------------------------------------
+ * 上传走的是原生 OkHttp（multipart），不走 rawFetch，
+ * 因此拿不到 rawFetch 里的「提前刷新 + 401 重试」逻辑。
+ * 暴露这个函数，让上传前也能确保令牌新鲜，
+ * 否则 access token 一过 15 分钟，上传就固定失败 401。
+ */
+export async function authHeaders(): Promise<Record<string, string>> {
+  await ensureFreshToken();
+  const token = getAccessToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 /* ------------------------------------------------------------------ */

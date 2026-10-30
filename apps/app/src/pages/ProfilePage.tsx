@@ -17,6 +17,7 @@ import { pop, reset } from '../router.js';
 import { setUser, useAuth } from '../store/auth.js';
 import { clearMessages } from '../store/conversations.js';
 import { colors, commonStyles, fontSize, radius, spacing } from '../theme.js';
+import { IconBack } from './Icons.js';
 
 export function ProfilePage() {
   const auth = useAuth();
@@ -63,10 +64,11 @@ export function ProfilePage() {
     <view style={commonStyles.page}>
       {/* 顶部栏：三段式居中 */}
       <view style={commonStyles.header}>
-        <view style={commonStyles.headerSide}>
-          <text style={{ color: colors.primary, fontSize: fontSize.md }} bindtap={pop}>
-            返回
-          </text>
+        <view
+          style={{ ...commonStyles.headerSide, justifyContent: 'center' }}
+          bindtap={pop}
+        >
+          <IconBack size={22} color={colors.text} />
         </view>
         <view style={commonStyles.headerCenter}>
           <text style={commonStyles.headerTitle}>我的</text>

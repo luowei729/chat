@@ -21,8 +21,8 @@ android {
         applicationId = "pub.lkz.chat"
         minSdk = 24
         targetSdk = 34
-        versionCode = 200
-        versionName = "2.0.0"
+        versionCode = 210
+        versionName = "2.1.0"
 
         // 只保留中文与英文资源，减小包体积
         resourceConfigurations += listOf("zh", "en")
@@ -189,4 +189,17 @@ dependencies {
 
     // ---------- 协程 ----------
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+
+    // ---------- CameraX ----------
+    // 微信式相机（短按拍照 / 长按录像 / 闪光灯开关）需要
+    // 实时预览 + 拍照 + 录像三件套，Camera2 手写太易错，
+    // 用 CameraX 的 Preview/ImageCapture/VideoCapture 组合。
+    implementation("androidx.camera:camera-core:1.3.4")
+    implementation("androidx.camera:camera-camera2:1.3.4")
+    implementation("androidx.camera:camera-lifecycle:1.3.4")
+    implementation("androidx.camera:camera-video:1.3.4")
+    implementation("androidx.camera:camera-view:1.3.4")
+    // CameraX 的异步 API 返回 ListenableFuture，Kotlin 编译需要 Guava 在
+    // classpath 上，否则报 "Cannot access class ListenableFuture"。
+    implementation("com.google.guava:guava:32.1.3-android")
 }

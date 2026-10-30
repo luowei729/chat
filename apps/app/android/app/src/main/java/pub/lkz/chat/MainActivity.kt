@@ -1,6 +1,7 @@
 package pub.lkz.chat
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Typeface
@@ -602,6 +603,18 @@ class MainActivity : AppCompatActivity() {
     /* ------------------------------------------------------------------ */
     /* 返回键与生命周期                                                     */
     /* ------------------------------------------------------------------ */
+
+    /**
+     * Activity 结果转发
+     * ------------------------------------------------------------
+     * LynxModule 自身拿不到 onActivityResult，选图/拍照/选文件
+     * 全部由 MediaBridge 单槽挂起，这里统一转发。
+     */
+    @Deprecated("AndroidX 推荐 ActivityResultLauncher，但 Lynx 模块需要同步回调，保留旧 API")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        pub.lkz.chat.media.MediaBridge.handleActivityResult(requestCode, resultCode, data)
+    }
 
     @Deprecated("Android 13+ 推荐用 OnBackPressedDispatcher")
     override fun onBackPressed() {

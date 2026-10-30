@@ -31,6 +31,7 @@ import {
 import { pop, push, reset } from '../router.js';
 import { refreshFriends } from '../store/friends.js';
 import { colors, commonStyles, fontSize, radius, spacing } from '../theme.js';
+import { IconBack } from './Icons.js';
 
 export function UserProfilePage(props: { userId: string }) {
   const { userId } = props;
@@ -146,10 +147,11 @@ export function UserProfilePage(props: { userId: string }) {
     return (
       <view style={commonStyles.page}>
         <view style={commonStyles.header}>
-          <view style={commonStyles.headerSide}>
-            <text style={{ color: colors.primary, fontSize: fontSize.md }} bindtap={pop}>
-              返回
-            </text>
+          <view
+            style={{ ...commonStyles.headerSide, justifyContent: 'center' }}
+            bindtap={pop}
+          >
+            <IconBack size={22} color={colors.text} />
           </view>
           <view style={commonStyles.headerCenter}>
             <text style={commonStyles.headerTitle}>详细资料</text>
@@ -181,10 +183,11 @@ export function UserProfilePage(props: { userId: string }) {
     <view style={commonStyles.page}>
       {/* 顶部栏 */}
       <view style={commonStyles.header}>
-        <view style={commonStyles.headerSide}>
-          <text style={{ color: colors.primary, fontSize: fontSize.md }} bindtap={pop}>
-            返回
-          </text>
+        <view
+          style={{ ...commonStyles.headerSide, justifyContent: 'center' }}
+          bindtap={pop}
+        >
+          <IconBack size={22} color={colors.text} />
         </view>
         <view style={commonStyles.headerCenter}>
           <text style={commonStyles.headerTitle}>详细资料</text>

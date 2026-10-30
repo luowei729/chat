@@ -23,22 +23,76 @@ export const StorageKey = {
   SYNC_SEQ_PREFIX: 'chat.syncseq.',
 } as const;
 
+import { getLynx, getNativeModule } from './platform/globals.js';
+
 /**
  * 底层存储实现
  * ------------------------------------------------------------
  * Lynx 原生端提供全局 `lynx.getStorageItem` 等同步 API；
  * Web 端退回 localStorage。两者都是同步的，所以业务层可以当同步接口用。
  */
-interface LynxStorageApi {
-  setStorageItem?: (key: string, value: string) => void;
-  getStorageItem?: (key: string) => string | null | undefined;
-  removeStorageItem?: (key: string) => void;
+interface ChatStoreNative {
+  setItem?: (key: string, value: string) => void;
+  removeItem?: (key: string) => void;
+  getItem?: (key: string, cb: (v: unknown) => void) => void;
+  dump?: (cb: (v: unknown) => void) => void;
 }
 
-function getNativeApi(): LynxStorageApi | null {
-  const g = globalThis as unknown as { lynx?: LynxStorageApi };
-  if (g.lynx?.setStorageItem) return g.lynx;
+/**
+ * 取原生存储模块
+ * 注意：必须经 getNativeModule 走裸标识符 NativeModules，
+ * globalThis.NativeModules 在 Lynx 原生端恒为 undefined。
+ */
+function storeNative(): ChatStoreNative | null {
+  return getNativeModule<ChatStoreNative>('ChatStore');
+}
+
+/** Lynx 是否自带存储 API（当前版本没有，保留探测以备升级） */
+function lynxStorage(): Record<string, unknown> | null {
+  const l = getLynx();
+  if (l && typeof l['setStorageItem'] === 'function') return l;
   return null;
+}
+
+let hydrated = false;
+
+/**
+ * 预热：把原生已持久化的键值一次性读进内存
+ * 必须在读取令牌之前 await，否则会误判为未登录。
+ * 失败不抛异常 —— 最差情况退化成「本次会话内有效」。
+ */
+export function hydrateStorage(): Promise<void> {
+  if (hydrated) return Promise.resolve();
+  hydrated = true;
+
+  const native = storeNative();
+  if (native?.dump) {
+    return new Promise<void>((resolve) => {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        resolve();
+      };
+      // 原生没回调时的兜底，避免启动被卡死
+      setTimeout(finish, 1500);
+      try {
+        native.dump!((raw) => {
+          const obj = raw as Record<string, unknown> | null;
+          if (obj && typeof obj === 'object') {
+            for (const k of Object.keys(obj)) {
+              const v = obj[k];
+              if (typeof v === 'string' && v !== '') memoryStore.set(k, v);
+            }
+          }
+          finish();
+        });
+      } catch {
+        finish();
+      }
+    });
+  }
+  return Promise.resolve();
 }
 
 function getWebStorage(): Storage | null {
@@ -56,58 +110,90 @@ const memoryStore = new Map<string, string>();
 
 /** 写入字符串 */
 export function setItem(key: string, value: string): void {
-  const native = getNativeApi();
-  if (native?.setStorageItem) {
-    native.setStorageItem(key, value);
-    return;
-  }
-  const web = getWebStorage();
-  if (web) {
+  memoryStore.set(key, value);
+
+  const native = storeNative();
+  if (native?.setItem) {
     try {
-      web.setItem(key, value);
+      native.setItem(key, value);
       return;
     } catch {
-      // 配额满或隐私模式，落回内存
+      // 忽略，内存里已有
     }
   }
-  memoryStore.set(key, value);
-}
 
-/** 读取字符串 */
-export function getItem(key: string): string | null {
-  const native = getNativeApi();
-  if (native?.getStorageItem) {
-    const v = native.getStorageItem(key);
-    return v ?? null;
-  }
-  const web = getWebStorage();
-  if (web) {
+  const l = lynxStorage();
+  if (l) {
     try {
-      return web.getItem(key);
-    } catch {
-      // 忽略，走内存兜底
-    }
-  }
-  return memoryStore.get(key) ?? null;
-}
-
-/** 删除 */
-export function removeItem(key: string): void {
-  const native = getNativeApi();
-  if (native?.removeStorageItem) {
-    native.removeStorageItem(key);
-    return;
-  }
-  const web = getWebStorage();
-  if (web) {
-    try {
-      web.removeItem(key);
+      (l['setStorageItem'] as (k: string, v: string) => void)(key, value);
       return;
     } catch {
       // 忽略
     }
   }
+
+  const web = getWebStorage();
+  if (web) {
+    try {
+      web.setItem(key, value);
+    } catch {
+      // 配额满或隐私模式，内存兜底
+    }
+  }
+}
+
+/** 读取字符串 */
+export function getItem(key: string): string | null {
+  const cached = memoryStore.get(key);
+  if (cached !== undefined) return cached;
+
+  const web = getWebStorage();
+  if (web) {
+    try {
+      const v = web.getItem(key);
+      if (v !== null) {
+        memoryStore.set(key, v);
+        return v;
+      }
+    } catch {
+      // 忽略
+    }
+  }
+  return null;
+}
+
+/** 删除 */
+export function removeItem(key: string): void {
   memoryStore.delete(key);
+
+  const native = storeNative();
+  if (native?.removeItem) {
+    try {
+      native.removeItem(key);
+      return;
+    } catch {
+      // 忽略
+    }
+  }
+
+  const l = lynxStorage();
+  if (l) {
+    try {
+      (l['removeStorageItem'] as (k: string) => void)(key);
+      return;
+    } catch {
+      // 忽略
+    }
+  }
+
+  const web = getWebStorage();
+  if (web) {
+    try {
+      web.removeItem(key);
+    } catch {
+      // 忽略
+    }
+  }
 }
 
 /** 读 JSON 对象，解析失败返回 null（防止脏数据导致启动崩溃） */

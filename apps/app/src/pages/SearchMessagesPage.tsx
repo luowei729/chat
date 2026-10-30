@@ -15,6 +15,7 @@ import type { MessageSearchHit } from '@chat/shared';
 import { searchMessages } from '../api/index.js';
 import { pop, push } from '../router.js';
 import { colors, commonStyles, fontSize, radius, spacing } from '../theme.js';
+import { IconBack } from './Icons.js';
 
 /** 命中词包裹标记，与后端约定 */
 const HL_START = '\u0002';
@@ -81,7 +82,7 @@ export function SearchMessagesPage() {
           }}
           bindtap={pop}
         >
-          <text style={{ color: colors.primary, fontSize: fontSize.md }}>返回</text>
+          <IconBack size={22} color={colors.text} />
         </view>
 
         <view style={{ width: '72%', marginRight: spacing.sm }}>

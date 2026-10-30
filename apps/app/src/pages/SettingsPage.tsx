@@ -31,6 +31,26 @@ import {
   type ThemeMode,
 } from '../theme.js';
 import { TabBar } from './TabBar.js';
+import {
+  IconChevron,
+  IconContacts,
+  IconInfo,
+  IconSearch,
+  IconStorage,
+  IconTicket,
+} from './Icons.js';
+
+/** Row 支持的图标 */
+type RowIcon = 'contacts' | 'ticket' | 'search' | 'storage' | 'info';
+
+/** iconKey → 矢量图标组件 */
+function renderRowIcon(icon: RowIcon, color: string) {
+  if (icon === 'contacts') return <IconContacts size={20} color={color} />;
+  if (icon === 'ticket') return <IconTicket size={20} color={color} />;
+  if (icon === 'search') return <IconSearch size={20} color={color} />;
+  if (icon === 'storage') return <IconStorage size={20} color={color} />;
+  return <IconInfo size={20} color={color} />;
+}
 
 export function SettingsPage() {
   const auth = useAuth();
@@ -140,21 +160,21 @@ export function SettingsPage() {
             </text>
           </view>
 
-          <text style={{ color: colors.textFaint, fontSize: fontSize.lg }}>›</text>
+          <IconChevron size={16} color={colors.textFaint} />
         </view>
 
         {/* 功能分组一：社交 */}
         <SectionTitle text="社交" />
         <Group>
           <Row
-            icon="👥"
+            icon="contacts"
             label="联系人"
             value=""
             onTap={() => push({ name: 'contacts' })}
             badge={requests.incoming.length}
           />
           <Row
-            icon="🎟️"
+            icon="ticket"
             label="邀请好友"
             value={inviteQuota === null ? '' : `剩余 ${String(inviteQuota)} 个名额`}
             onTap={() => push({ name: 'invite' })}
@@ -166,7 +186,7 @@ export function SettingsPage() {
         <SectionTitle text="数据" />
         <Group>
           <Row
-            icon="🔍"
+            icon="search"
             label="搜索消息"
             value=""
             onTap={() => push({ name: 'search-messages' })}
@@ -183,8 +203,8 @@ export function SettingsPage() {
         {/* 功能分组四：关于 */}
         <SectionTitle text="关于" />
         <Group>
-          <Row icon="💾" label="聊天文件保留" value="30 天" onTap={() => undefined} />
-          <Row icon="ℹ️" label="版本" value="2.0.0" onTap={() => undefined} last />
+          <Row icon="storage" label="聊天文件保留" value="30 天" onTap={() => undefined} />
+          <Row icon="info" label="版本" value="2.0.0" onTap={() => undefined} last />
         </Group>
 
         {/* 退出登录 */}
@@ -355,7 +375,7 @@ function Group(props: { children: React.ReactNode }) {
 }
 
 function Row(props: {
-  icon: string;
+  icon: RowIcon;
   label: string;
   value: string;
   onTap: () => void;
@@ -380,7 +400,19 @@ function Row(props: {
       }}
       bindtap={onTap}
     >
-      <text style={{ fontSize: '16px', marginRight: spacing.md }}>{icon}</text>
+      <view
+        style={{
+          width: '20px',
+          height: '20px',
+          marginRight: spacing.md,
+          display: 'flex',
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        {renderRowIcon(icon, colors.text)}
+      </view>
 
       <text style={{ color: colors.text, fontSize: fontSize.md }}>{label}</text>
 
@@ -414,7 +446,7 @@ function Row(props: {
         </text>
       ) : null}
 
-      <text style={{ color: colors.textFaint, fontSize: fontSize.lg }}>›</text>
+      <IconChevron size={16} color={colors.textFaint} />
     </view>
   );
 }

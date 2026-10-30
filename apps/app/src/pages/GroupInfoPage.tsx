@@ -27,6 +27,7 @@ import { pop, reset } from '../router.js';
 import { useAuth } from '../store/auth.js';
 import { refreshFriends, useFriends } from '../store/friends.js';
 import { colors, commonStyles, fontSize, radius, spacing } from '../theme.js';
+import { IconChevron } from './Icons.js';
 
 /** 成员每页展示数 */
 const MEMBER_PAGE = 10;
@@ -489,7 +490,7 @@ function MemberRow(props: {
       </view>
 
       {canManage ? (
-        <text style={{ color: colors.textFaint, fontSize: fontSize.lg }}>›</text>
+        <IconChevron size={16} color={colors.textFaint} />
       ) : null}
     </view>
   );

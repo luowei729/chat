@@ -21,6 +21,7 @@ import { pop, push } from '../router.js';
 import { refreshFriends, useFriends } from '../store/friends.js';
 import { colors, commonStyles, fontSize, radius, spacing } from '../theme.js';
 import { TabBar } from './TabBar.js';
+import { IconChevron, IconPlus } from './Icons.js';
 
 /** 每页条数：一屏大约能放 8 条，取 8 保证不需要滚动 */
 const PAGE_SIZE = 8;
@@ -92,7 +93,7 @@ export function ContactsPage() {
           }}
           bindtap={() => push({ name: 'new-chat' })}
         >
-          <text style={{ fontSize: '20px', color: colors.primary }}>➕</text>
+          <IconPlus size={24} color={colors.text} />
         </view>
       </view>
 
@@ -337,7 +338,7 @@ function FriendRow(props: { friend: FriendItem; onChat: () => void }) {
         }}
         bindtap={() => push({ name: 'user-profile', params: { userId: f.userId } })}
       >
-        <text style={{ color: colors.textFaint, fontSize: fontSize.lg }}>›</text>
+        <IconChevron size={16} color={colors.textFaint} />
       </view>
     </view>
   );

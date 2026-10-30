@@ -33,6 +33,7 @@ import {
   useMessages,
 } from '../store/conversations.js';
 import { currentUserId } from '../store/auth.js';
+import { IconAttach } from './Icons.js';
 import { colors, commonStyles, fontSize, radius, spacing } from '../theme.js';
 
 export function ChatPage(props: { conversationId: string; title?: string }) {
@@ -458,7 +459,7 @@ function MessageContent(props: { message: Message; isSelf: boolean }) {
       return (
         <view style={{}}>
           <text style={{ color: isSelf ? '#fff' : colors.text, fontSize: fontSize.sm }} text-maxline="1">
-            📎 {att?.filename ?? '文件'}
+            {att?.filename ?? '文件'}
           </text>
           <text style={{ color: isSelf ? 'rgba(255,255,255,0.7)' : colors.textMuted, fontSize: '10px' }}>
             {formatBytes(att?.size ?? 0)}

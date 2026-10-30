@@ -21,6 +21,7 @@ import { push } from '../router.js';
 import { setConversations, useConversations } from '../store/conversations.js';
 import { colors, commonStyles, fontSize, radius, spacing } from '../theme.js';
 import { TabBar } from './TabBar.js';
+import { IconChat, IconCompose, IconSearch } from './Icons.js';
 
 export function ConversationsPage() {
   const { list, loaded, loading } = useConversations();
@@ -96,7 +97,7 @@ export function ConversationsPage() {
             }}
             bindtap={() => push({ name: 'search-messages' })}
           >
-            <text style={{ fontSize: '18px', color: colors.textMuted }}>🔍</text>
+            <IconSearch size={23} color={colors.text} />
           </view>
           <view
             style={{
@@ -109,7 +110,7 @@ export function ConversationsPage() {
             }}
             bindtap={() => push({ name: 'new-chat' })}
           >
-            <text style={{ fontSize: '20px', color: colors.primary }}>✏️</text>
+            <IconCompose size={23} color={colors.text} />
           </view>
         </view>
       </view>
@@ -148,7 +149,7 @@ export function ConversationsPage() {
                 marginBottom: spacing.lg,
               }}
             >
-              <text style={{ fontSize: '36px' }}>💬</text>
+              <IconChat size={40} color={colors.textFaint} />
             </view>
             <text style={{ color: colors.text, fontSize: fontSize.md, fontWeight: '600' }}>
               还没有会话

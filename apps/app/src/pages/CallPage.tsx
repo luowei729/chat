@@ -33,6 +33,7 @@ import {
   subscribeCallState,
   type CallEngineState,
 } from '../rtc/engine.js';
+import { IconCheck, IconClose, IconMic } from './Icons.js';
 import { colors, commonStyles, fontSize, radius, spacing } from '../theme.js';
 
 export function CallPage(props: {
@@ -284,20 +285,21 @@ export function CallPage(props: {
       >
         {phase === 'ringing' && incoming ? (
           <>
-            <CircleButton label="拒接" color={colors.danger} onTap={handleReject} icon="✕" />
-            <CircleButton label="接听" color={colors.success} onTap={handleAccept} icon="✓" />
+            <CircleButton label="拒接" color={colors.danger} onTap={handleReject} action="hangup" />
+            <CircleButton label="接听" color={colors.success} onTap={handleAccept} action="accept" />
           </>
         ) : phase === 'ringing' ? (
-          <CircleButton label="取消" color={colors.danger} onTap={handleHangup} icon="✕" />
+          <CircleButton label="取消" color={colors.danger} onTap={handleHangup} action="hangup" />
         ) : (
           <>
             <CircleButton
               label={engine.muted ? '取消静音' : '静音'}
               color={engine.muted ? colors.primary : colors.surfaceAlt}
               onTap={toggleMute}
-              icon={engine.muted ? '🔇' : '🎤'}
+              action="mute"
+              muted={engine.muted}
             />
-            <CircleButton label="挂断" color={colors.danger} onTap={handleHangup} icon="✕" />
+            <CircleButton label="挂断" color={colors.danger} onTap={handleHangup} action="hangup" />
           </>
         )}
       </view>
@@ -351,7 +353,7 @@ function ParticipantTile(props: {
         text-maxline="1"
       >
         {name}
-        {muted ? ' 🔇' : ''}
+        {muted ? '（静音）' : ''}
       </text>
 
       {connectionState && connectionState !== 'connected' ? (
@@ -367,10 +369,13 @@ function ParticipantTile(props: {
 function CircleButton(props: {
   label: string;
   color: string;
-  icon: string;
+  /** 图标语义：接听 / 挂断 / 静音 */
+  action: 'accept' | 'hangup' | 'mute';
+  /** true = 静音态（麦克风 + 斜杠） */
+  muted?: boolean;
   onTap: () => void;
 }) {
-  const { label, color, icon, onTap } = props;
+  const { label, color, action, muted = false, onTap } = props;
 
   return (
     <view style={{ alignItems: 'center', marginLeft: spacing.lg, marginRight: spacing.lg }}>
@@ -389,7 +394,27 @@ function CircleButton(props: {
         }}
         bindtap={onTap}
       >
-        <text style={{ color: '#fff', fontSize: '22px' }}>{icon}</text>
+        <view style={{ position: 'relative', width: '22px', height: '22px' }}>
+          {action === 'mute' ? <IconMic size={22} color="#FFFFFF" /> : null}
+          {action === 'accept' ? <IconCheck size={22} color="#FFFFFF" /> : null}
+          {action === 'hangup' ? <IconClose size={22} color="#FFFFFF" /> : null}
+
+          {action === 'mute' && muted ? (
+            /* 静音斜杠：45° 细线，覆盖在麦克风上 */
+            <view
+              style={{
+                position: 'absolute',
+                left: '-2px',
+                top: '10px',
+                width: '26px',
+                height: '2px',
+                backgroundColor: '#FFFFFF',
+                borderRadius: '1px',
+                transform: 'rotate(-45deg)',
+              }}
+            />
+          ) : null}
+        </view>
       </view>
       <text style={{ color: colors.textMuted, fontSize: fontSize.xs }}>{label}</text>
     </view>

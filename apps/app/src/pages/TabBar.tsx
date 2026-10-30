@@ -19,6 +19,7 @@
  */
 
 import { colors, fontSize, radius } from '../theme.js';
+import { IconChat, IconContacts, IconSettings } from './Icons.js';
 
 export type TabKey = 'chats' | 'contacts' | 'settings';
 
@@ -33,11 +34,29 @@ interface TabBarProps {
   contactBadge?: number;
 }
 
-const TABS: Array<{ key: TabKey; label: string; icon: string }> = [
-  { key: 'chats', label: '聊天', icon: '💬' },
-  { key: 'contacts', label: '联系人', icon: '👥' },
-  { key: 'settings', label: '设置', icon: '⚙️' },
+/**
+ * Tab 定义
+ * ------------------------------------------------------------
+ * 用线性矢量图标而不是 emoji：
+ * emoji 是拟物彩色字形，与扁平设计语言冲突且各端渲染差异大；
+ * 图标统一 22px、描边 2px，选中时切换为填充态 + 强调色。
+ */
+const TABS: Array<{ key: TabKey; label: string }> = [
+  { key: 'chats', label: '聊天' },
+  { key: 'contacts', label: '联系人' },
+  { key: 'settings', label: '设置' },
 ];
+
+/** 按 Tab 与选中态渲染对应图标 */
+function TabIcon(props: { tab: TabKey; active: boolean }) {
+  const { tab, active } = props;
+  // 纯白图标：选中态用纯白 + 填充，未选中用灰白描边
+  const color = active ? colors.text : colors.textFaint;
+
+  if (tab === 'chats') return <IconChat size={23} color={color} filled={active} />;
+  if (tab === 'contacts') return <IconContacts size={23} color={color} filled={active} />;
+  return <IconSettings size={23} color={color} filled={active} />;
+}
 
 export function TabBar(props: TabBarProps) {
   const { active, onChange, chatBadge = 0, contactBadge = 0 } = props;
@@ -99,7 +118,7 @@ export function TabBar(props: TabBarProps) {
                 position: 'relative',
               }}
             >
-              <text style={{ fontSize: '17px' }}>{t.icon}</text>
+              <TabIcon tab={t.key} active={isActive} />
 
               {badge > 0 ? (
                 <view
@@ -130,7 +149,8 @@ export function TabBar(props: TabBarProps) {
             <text
               style={{
                 fontSize: fontSize.xs,
-                color: isActive ? colors.primary : colors.textFaint,
+                // 纯白单一色系：选中纯白，未选中灰白
+                color: isActive ? colors.text : colors.textFaint,
                 fontWeight: isActive ? '600' : '400',
                 marginTop: '2px',
               }}

@@ -38,6 +38,10 @@ import { CallPage } from './pages/CallPage.js';
 import { InvitePage } from './pages/InvitePage.js';
 import { ProfilePage } from './pages/ProfilePage.js';
 import { NewChatPage } from './pages/NewChatPage.js';
+import { ContactsPage } from './pages/ContactsPage.js';
+import { FriendRequestsPage } from './pages/FriendRequestsPage.js';
+import { UserProfilePage } from './pages/UserProfilePage.js';
+import { GroupInfoPage } from './pages/GroupInfoPage.js';
 
 export function App() {
   const auth = useAuth();
@@ -193,52 +197,43 @@ export function App() {
   }
 
   return (
-    <view style={rootStyle}>
-      {/*
-        SENTINEL：8px 可见性哨兵（临时，确认稳定后删除）
-        ----------------------------------------------------
-        看到这行红条 → Lynx 根容器已拿到非零尺寸，问题在页面内容
-        看不到红条   → 根容器高度依旧为 0，需要继续查尺寸链路
-        用固定高度块而不是 border，因为 0 高度元素的 border 会重叠
-        绘制出假阳性。
-      */}
-      <view style={sentinelStyle} />
-      {content}
-    </view>
+    <page>
+      <view style={rootStyle}>{content}</view>
+    </page>
   );
 }
 
 /**
- * 根容器样式
+ * 根容器
  * ============================================================
- * 【两个致命坑，各自都会导致「onFirstScreen 成功但全屏空白」】
+ * 结构（Android 模拟器实测通过）：
  *
- * 坑 1：用 height:'100%' 作根高度
- *   LynxView 内部的 page 层高度并不总是确定值，
- *   百分比高度在父级高度未定时会被 Yoga 算成 0。
- *   结果是渲染树完整、onFirstScreen 正常触发、
- *   回调全部成功——但画布上一个像素也没有。
- *   必须用视口单位 100vh / 100vw（官方 hello-world 就是这么写的）。
+ *   <page>                                   ← 不带任何样式
+ *     <view height:100vh flex column>
+ *       <页面组件 flex:1 />
+ *     </view>
+ *   </page>
  *
- * 坑 2：外层再包一个 <page>
- *   LynxView 内部已经创建了 page 根节点，再嵌一层同样算出高度 0。
- *   （本组件已避免，保留此注释防止回退）
+ * 三条铁律，每条都是实测踩出来的：
+ *
+ * 1. 根必须是 <page>，且 page 上不写样式。
+ *    page 尺寸由 LynxView 直接给定，再写 height 反而会干扰。
+ *
+ * 2. 内容容器必须 height:'100vh'，**不能是 minHeight**。
+ *    min-height 让父级高度不确定，子元素的 flex:1 / scroll-view
+ *    全部塌陷成 0 高。此时 Lynx 不报任何错、onFirstScreen 照常触发，
+ *    表现就是「整屏空白」——最难排查的一类问题。
+ *
+ * 3. 不要用 position:absolute 做内容容器。
+ *    absolute 会成为新的包含块，内部 flex 链同样失效。
  * ============================================================
  */
 const rootStyle = {
-  width: '100vw',
+  width: '100%',
   height: '100vh',
-  backgroundColor: colors.bg,
   display: 'flex',
   flexDirection: 'column',
-} as const;
-
-/** SENTINEL：临时可见性哨兵，确认稳定后删除 */
-const sentinelStyle = {
-  width: '100%',
-  height: 8,
-  flexShrink: 0,
-  backgroundColor: '#FF0055',
+  backgroundColor: colors.bg,
 } as const;
 
 /** 路由 → 页面组件 */
@@ -275,6 +270,19 @@ function renderRoute(name: string, params?: Record<string, unknown>) {
       return <ProfilePage />;
     case 'new-chat':
       return <NewChatPage />;
+    case 'contacts':
+      return <ContactsPage />;
+    case 'friend-requests':
+      return <FriendRequestsPage />;
+    case 'user-profile':
+      return <UserProfilePage userId={params?.userId as string} />;
+    case 'group-info':
+      return (
+        <GroupInfoPage
+          conversationId={params?.conversationId as string}
+          title={params?.title as string | undefined}
+        />
+      );
     default:
       return <ConversationsPage />;
   }

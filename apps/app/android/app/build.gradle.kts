@@ -158,6 +158,11 @@ dependencies {
     // 日志服务：把前端 console 输出转到 Logcat，排查问题必备
     implementation("org.lynxsdk.lynx:lynx-service-log:4.2.0")
 
+    // HTTP 服务（关键）：Lynx 引擎自身不实现网络请求，
+    // fetch / XMLHttpRequest 全部由宿主 App 提供实现。
+    // 不加这个依赖，所有网络请求都会立即失败且报「网络连接失败」。
+    implementation("org.lynxsdk.lynx:lynx-service-http:4.2.0")
+
     // 扩展元素：input / textarea / webview / video 等原生组件
     // 注意：不加这个，<input> 会渲染失败（登录页直接不可用）
     implementation("org.lynxsdk.lynx:xelement:4.2.0")

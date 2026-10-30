@@ -91,7 +91,7 @@ export function InvitePage() {
         <view style={commonStyles.headerSide} />
       </view>
 
-      <scroll-view scroll-orientation="vertical" style={commonStyles.scroll}>
+      <view style={{ flex: 1, width: '100%', display: 'flex', flexDirection: 'column' }}>
         <view style={{ padding: spacing.lg, paddingBottom: spacing.xxxl }}>
           {/* 配额卡片：内容全部居中，用 margin 分隔 */}
           <view
@@ -105,7 +105,7 @@ export function InvitePage() {
             <text
               style={{
                 color: colors.primary,
-                fontSize: 44,
+                fontSize: '44px',
                 fontWeight: '700',
                 marginTop: spacing.sm,
                 marginBottom: spacing.sm,
@@ -189,7 +189,7 @@ export function InvitePage() {
                   >
                     {c.code}
                   </text>
-                  <text style={{ color: colors.textFaint, fontSize: fontSize.xs, marginTop: 4 }}>
+                  <text style={{ color: colors.textFaint, fontSize: fontSize.xs, marginTop: '4px' }}>
                     {c.remainingUses > 0
                       ? `剩余 ${c.remainingUses}/${c.maxUses} 次`
                       : '已用完'}
@@ -226,8 +226,8 @@ export function InvitePage() {
               >
                 <view
                   style={{
-                    width: 38,
-                    height: 38,
+                    width: '38px',
+                    height: '38px',
                     borderRadius: radius.full,
                     backgroundColor: colors.primarySoft,
                     display: 'flex',
@@ -244,7 +244,7 @@ export function InvitePage() {
                   <text style={{ color: colors.text, fontSize: fontSize.md }} text-maxline="1">
                     {u.nickname}
                   </text>
-                  <text style={{ color: colors.textFaint, fontSize: fontSize.xs, marginTop: 2 }}>
+                  <text style={{ color: colors.textFaint, fontSize: fontSize.xs, marginTop: '2px' }}>
                     {formatDate(u.joinedAt)} 加入
                   </text>
                 </view>
@@ -254,7 +254,7 @@ export function InvitePage() {
 
           <view style={{ height: spacing.xxl }} />
         </view>
-      </scroll-view>
+      </view>
     </view>
   );
 }

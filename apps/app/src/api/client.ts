@@ -325,6 +325,11 @@ export function patch<T>(path: string, body?: unknown, options?: Omit<RawFetchOp
   return request<T>(path, { ...options, method: 'PATCH', body });
 }
 
+/** PUT 快捷方法（幂等覆盖写，如设置备注名） */
+export function put<T>(path: string, body?: unknown, options?: Omit<RawFetchOptions, 'method'>): Promise<T> {
+  return request<T>(path, { ...options, method: 'PUT', body });
+}
+
 /** DELETE 快捷方法 */
 export function del<T>(path: string, body?: unknown, options?: Omit<RawFetchOptions, 'method'>): Promise<T> {
   return request<T>(path, { ...options, method: 'DELETE', body });

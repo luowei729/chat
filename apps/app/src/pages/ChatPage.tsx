@@ -208,7 +208,7 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
               {title}
             </text>
             {peerTyping ? (
-              <text style={{ color: colors.primary, fontSize: fontSize.xs, marginTop: 2 }}>
+              <text style={{ color: colors.primary, fontSize: fontSize.xs, marginTop: '2px' }}>
                 对方正在输入…
               </text>
             ) : null}
@@ -222,11 +222,11 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
       </view>
 
       {/* 消息列表 */}
-      <scroll-view scroll-orientation="vertical" style={commonStyles.scroll}>
+      <view style={{ flex: 1, width: '100%', display: 'flex', flexDirection: 'column' }}>
         {/* 加载更多 */}
         {hasMore ? (
           <view
-            style={{ height: 44, alignItems: 'center', justifyContent: 'center' }}
+            style={{ height: '44px', alignItems: 'center', justifyContent: 'center' }}
             bindtap={loadMore}
           >
             <text style={{ color: colors.textMuted, fontSize: fontSize.xs }}>
@@ -234,7 +234,7 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
             </text>
           </view>
         ) : messages.length > 0 ? (
-          <view style={{ height: 32, alignItems: 'center', justifyContent: 'center' }}>
+          <view style={{ height: '32px', alignItems: 'center', justifyContent: 'center' }}>
             <text style={{ color: colors.textFaint, fontSize: fontSize.xs }}>没有更多了</text>
           </view>
         ) : null}
@@ -244,7 +244,7 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
         ))}
 
         <view style={{ height: spacing.lg }} />
-      </scroll-view>
+      </view>
 
       {/* 错误提示 */}
       {error ? (
@@ -261,13 +261,13 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
           alignItems: 'center',
           padding: spacing.sm,
           backgroundColor: colors.surface,
-          borderTopWidth: 1,
+          borderTopWidth: '1px',
           borderTopColor: colors.border,
         }}
       >
         <view style={{ flex: 1, marginRight: spacing.sm }}>
           <input
-            style={{ ...commonStyles.input, height: 42 }}
+            style={{ ...commonStyles.input, height: '42px' }}
             default-value={draft}
             placeholder="输入消息…"
             bindinput={(e: { detail: { value: string } }) => handleInput(e.detail.value)}
@@ -276,8 +276,8 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
         </view>
         <view
           style={{
-            width: 64,
-            height: 42,
+            width: '64px',
+            height: '42px',
             borderRadius: radius.md,
             backgroundColor: draft.trim() ? colors.primary : colors.surfaceAlt,
             display: 'flex',
@@ -338,11 +338,11 @@ function MessageBubble(props: { message: Message; isSelf: boolean }) {
       {/* 头像 */}
       <view
         style={{
-          width: 34,
-          height: 34,
+          width: '34px',
+          height: '34px',
           borderRadius: radius.full,
           backgroundColor: colors.primarySoft,
-          borderWidth: 1,
+          borderWidth: '1px',
           borderColor: colors.cardBorder,
           display: 'flex',
           alignItems: 'center',
@@ -360,7 +360,7 @@ function MessageBubble(props: { message: Message; isSelf: boolean }) {
       <view style={{ maxWidth: '72%', alignItems: isSelf ? 'flex-end' : 'flex-start' }}>
         {/* 群聊显示发送者昵称 */}
         {!isSelf ? (
-          <text style={{ color: colors.textFaint, fontSize: fontSize.xs, marginBottom: 2 }}>
+          <text style={{ color: colors.textFaint, fontSize: fontSize.xs, marginBottom: '2px' }}>
             {message.senderName}
           </text>
         ) : null}
@@ -378,16 +378,16 @@ function MessageBubble(props: { message: Message; isSelf: boolean }) {
           <MessageContent message={message} isSelf={isSelf} />
         </view>
 
-        <view style={{ display: 'flex', flexDirection: 'row', marginTop: 2 }}>
-          <text style={{ color: colors.textFaint, fontSize: 10 }}>
+        <view style={{ display: 'flex', flexDirection: 'row', marginTop: '2px' }}>
+          <text style={{ color: colors.textFaint, fontSize: '10px' }}>
             {formatClock(message.createdAt)}
           </text>
           {statusText ? (
             <text
               style={{
                 color: message.localStatus === 'failed' ? colors.danger : colors.textFaint,
-                fontSize: 10,
-                marginLeft: 6,
+                fontSize: '10px',
+                marginLeft: '6px',
               }}
             >
               {statusText}
@@ -406,7 +406,7 @@ function MessageContent(props: { message: Message; isSelf: boolean }) {
   switch (message.type) {
     case 'text':
       return (
-        <text style={{ color: isSelf ? '#fff' : colors.text, fontSize: fontSize.md, lineHeight: 1.5 }}>
+        <text style={{ color: isSelf ? '#fff' : colors.text, fontSize: fontSize.md, lineHeight: '1.5px' }}>
           {message.text ?? ''}
         </text>
       );
@@ -460,7 +460,7 @@ function MessageContent(props: { message: Message; isSelf: boolean }) {
           <text style={{ color: isSelf ? '#fff' : colors.text, fontSize: fontSize.sm }} text-maxline="1">
             📎 {att?.filename ?? '文件'}
           </text>
-          <text style={{ color: isSelf ? 'rgba(255,255,255,0.7)' : colors.textMuted, fontSize: 10 }}>
+          <text style={{ color: isSelf ? 'rgba(255,255,255,0.7)' : colors.textMuted, fontSize: '10px' }}>
             {formatBytes(att?.size ?? 0)}
           </text>
         </view>

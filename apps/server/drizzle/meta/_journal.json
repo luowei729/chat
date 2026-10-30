@@ -8,6 +8,20 @@
       "when": 1793254810690,
       "tag": "0000_lonely_sleeper",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1793365978198,
+      "tag": "0001_smart_stick",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1793367781517,
+      "tag": "0002_stormy_frank_castle",
+      "breakpoints": true
     }
   ]
 }

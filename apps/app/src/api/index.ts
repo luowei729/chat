@@ -13,6 +13,9 @@ import type {
   AuthResult,
   ConversationDetail,
   ConversationSummary,
+  FriendItem,
+  FriendRequests,
+  GroupMemberItem,
   IceConfigResponse,
   InviteOverview,
   Message,
@@ -20,11 +23,12 @@ import type {
   RegisterRequest,
   SendMessageRequest,
   UploadResult,
+  UserProfileView,
   UserPublic,
   AuthUser,
 } from '@chat/shared';
 import { PLATFORM } from '../config.js';
-import { getDeviceId, post, get, patch, del, upload, request } from './client.js';
+import { getDeviceId, post, get, patch, put, del, upload, request } from './client.js';
 import * as storage from '../storage.js';
 import { saveTokens } from './client.js';
 
@@ -117,6 +121,107 @@ export function searchUsers(q: string): Promise<UserPublic[]> {
 /** 查看他人资料 */
 export function getUser(userId: string): Promise<UserPublic> {
   return get(`/users/${encodeURIComponent(userId)}`);
+}
+
+/* ------------------------------------------------------------------ */
+/* 好友与联系人                                                         */
+/* ------------------------------------------------------------------ */
+
+/** 好友列表（含备注名与私聊会话 id） */
+export function listFriends(): Promise<FriendItem[]> {
+  return get('/friends');
+}
+
+/** 待处理的好友请求 */
+export function listFriendRequests(): Promise<FriendRequests> {
+  return get('/friends/requests');
+}
+
+/** 发起好友请求；对方此前已请求时会直接成为好友 */
+export function requestFriend(userId: string): Promise<{ autoAccepted: boolean; conversationId: string | null }> {
+  return post('/friends/request', { userId });
+}
+
+/** 接受好友请求 */
+export function acceptFriend(userId: string): Promise<{ conversationId: string | null }> {
+  return post('/friends/accept', { userId });
+}
+
+/** 拒绝好友请求 */
+export function rejectFriend(userId: string): Promise<{ done: boolean }> {
+  return post('/friends/reject', { userId });
+}
+
+/** 删除好友 */
+export function removeFriend(userId: string): Promise<{ done: boolean }> {
+  return del(`/friends/${encodeURIComponent(userId)}`);
+}
+
+/** 拉黑 */
+export function blockFriend(userId: string): Promise<{ done: boolean }> {
+  return post('/friends/block', { userId });
+}
+
+/** 解除拉黑 */
+export function unblockFriend(userId: string): Promise<{ done: boolean }> {
+  return del(`/friends/block/${encodeURIComponent(userId)}`);
+}
+
+/** 设置备注名；传空串等于清除 */
+export function setRemark(userId: string, remark: string): Promise<{ done: boolean }> {
+  return put(`/friends/${encodeURIComponent(userId)}/remark`, { remark });
+}
+
+/** 他人资料页（含关系状态、备注名、私聊会话 id） */
+export function getUserProfile(userId: string): Promise<UserProfileView> {
+  return get(`/users/${encodeURIComponent(userId)}/profile`);
+}
+
+/* ------------------------------------------------------------------ */
+/* 群成员管理                                                           */
+/* ------------------------------------------------------------------ */
+
+/** 群成员列表（含角色与我的备注名） */
+export function listGroupMembers(conversationId: string): Promise<GroupMemberItem[]> {
+  return get(`/conversations/${encodeURIComponent(conversationId)}/members`);
+}
+
+/** 邀请成员入群；已在群内的会被跳过 */
+export function inviteGroupMembers(
+  conversationId: string,
+  userIds: string[],
+): Promise<{ added: string[]; skipped: string[] }> {
+  return post(`/conversations/${encodeURIComponent(conversationId)}/members`, { userIds });
+}
+
+/** 移除成员 / 设为管理员 / 取消管理员 */
+export function updateGroupMember(
+  conversationId: string,
+  userId: string,
+  action: 'promote' | 'demote' | 'remove',
+): Promise<{ success: boolean }> {
+  return patch(`/conversations/${encodeURIComponent(conversationId)}/members`, { userId, action });
+}
+
+/** 退出群聊（群主需先转让） */
+export function leaveGroup(conversationId: string): Promise<{ success: boolean }> {
+  return post(`/conversations/${encodeURIComponent(conversationId)}/leave`);
+}
+
+/** 转让群主 */
+export function transferGroupOwner(
+  conversationId: string,
+  userId: string,
+): Promise<{ success: boolean }> {
+  return post(`/conversations/${encodeURIComponent(conversationId)}/transfer`, { userId });
+}
+
+/** 修改群资料（群名） */
+export function updateGroupInfo(
+  conversationId: string,
+  fields: { title?: string },
+): Promise<{ success: boolean }> {
+  return patch(`/conversations/${encodeURIComponent(conversationId)}/info`, fields);
 }
 
 /* ------------------------------------------------------------------ */

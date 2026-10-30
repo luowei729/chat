@@ -1,0 +1,315 @@
+/**
+ * ============================================================
+ * 新的朋友（好友请求）
+ * ------------------------------------------------------------
+ * 两个分区：
+ *   收到的 —— 可接受 / 拒绝
+ *   发出的 —— 可撤回（删除请求）
+ *
+ * 布局约束：纯 view，不用滚动容器；列表过长时用分页按钮。
+ * ============================================================
+ */
+
+import { useEffect, useState } from '@lynx-js/react';
+import type { FriendRequestItem } from '@chat/shared';
+import { acceptFriend, rejectFriend } from '../api/index.js';
+import { pop, push } from '../router.js';
+import { refreshFriends, useFriends } from '../store/friends.js';
+import { colors, commonStyles, fontSize, radius, spacing } from '../theme.js';
+
+export function FriendRequestsPage() {
+  const { requests, loaded } = useFriends();
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<'incoming' | 'outgoing'>('incoming');
+
+  useEffect(() => {
+    void refreshFriends();
+  }, []);
+
+  const handleAccept = async (item: FriendRequestItem) => {
+    if (busyId) return;
+    setBusyId(item.userId);
+    setError(null);
+    try {
+      const r = await acceptFriend(item.userId);
+      await refreshFriends();
+      // 接受后直接进入聊天
+      if (r.conversationId) {
+        push({
+          name: 'chat',
+          params: { conversationId: r.conversationId, title: item.nickname },
+        });
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '操作失败，请重试');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleReject = async (item: FriendRequestItem) => {
+    if (busyId) return;
+    setBusyId(item.userId);
+    setError(null);
+    try {
+      await rejectFriend(item.userId);
+      await refreshFriends();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '操作失败，请重试');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const list = tab === 'incoming' ? requests.incoming : requests.outgoing;
+
+  return (
+    <view style={commonStyles.page}>
+      {/* 顶部栏 */}
+      <view style={commonStyles.header}>
+        <view style={commonStyles.headerSide}>
+          <text style={{ color: colors.primary, fontSize: fontSize.md }} bindtap={pop}>
+            返回
+          </text>
+        </view>
+        <view style={commonStyles.headerCenter}>
+          <text style={commonStyles.headerTitle}>新的朋友</text>
+        </view>
+        <view style={commonStyles.headerSide} />
+      </view>
+
+      {/* 分区切换 */}
+      <view
+        style={{
+          width: '100%',
+          display: 'flex',
+          flexDirection: 'row',
+          paddingLeft: spacing.lg,
+          paddingRight: spacing.lg,
+          paddingTop: spacing.md,
+        }}
+      >
+        <view
+          style={{
+            flex: 1,
+            height: '40px',
+            borderRadius: radius.md,
+            backgroundColor: tab === 'incoming' ? colors.primarySoft : 'transparent',
+            borderWidth: '1px',
+            borderColor: tab === 'incoming' ? colors.primary : colors.cardBorder,
+            display: 'flex',
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginRight: spacing.sm,
+          }}
+          bindtap={() => setTab('incoming')}
+        >
+          <text
+            style={{
+              color: tab === 'incoming' ? colors.primary : colors.textMuted,
+              fontSize: fontSize.sm,
+            }}
+          >
+            收到的（{String(requests.incoming.length)}）
+          </text>
+        </view>
+        <view
+          style={{
+            flex: 1,
+            height: '40px',
+            borderRadius: radius.md,
+            backgroundColor: tab === 'outgoing' ? colors.primarySoft : 'transparent',
+            borderWidth: '1px',
+            borderColor: tab === 'outgoing' ? colors.primary : colors.cardBorder,
+            display: 'flex',
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+          bindtap={() => setTab('outgoing')}
+        >
+          <text
+            style={{
+              color: tab === 'outgoing' ? colors.primary : colors.textMuted,
+              fontSize: fontSize.sm,
+            }}
+          >
+            发出的（{String(requests.outgoing.length)}）
+          </text>
+        </view>
+      </view>
+
+      {/* 列表 */}
+      <view
+        style={{
+          flex: 1,
+          width: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          paddingLeft: spacing.lg,
+          paddingRight: spacing.lg,
+          paddingTop: spacing.md,
+        }}
+      >
+        {error ? (
+          <text style={{ color: colors.danger, fontSize: fontSize.sm, marginBottom: spacing.sm }}>
+            {error}
+          </text>
+        ) : null}
+
+        {list.map((item) => (
+          <RequestRow
+            key={item.userId}
+            item={item}
+            busy={busyId === item.userId}
+            onAccept={() => void handleAccept(item)}
+            onReject={() => void handleReject(item)}
+          />
+        ))}
+
+        {loaded && list.length === 0 ? (
+          <view
+            style={{
+              width: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              paddingTop: '48px',
+            }}
+          >
+            <text style={{ color: colors.textMuted, fontSize: fontSize.md }}>
+              {tab === 'incoming' ? '没有收到好友请求' : '没有发出的请求'}
+            </text>
+            <text
+              style={{
+                color: colors.textFaint,
+                fontSize: fontSize.sm,
+                marginTop: spacing.sm,
+                textAlign: 'center',
+              }}
+            >
+              {tab === 'incoming'
+                ? '别人加你为好友时会出现在这里'
+                : '去通讯录「添加」里搜索用户'}
+            </text>
+          </view>
+        ) : null}
+      </view>
+    </view>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* 请求行                                                               */
+/* ------------------------------------------------------------------ */
+
+function RequestRow(props: {
+  item: FriendRequestItem;
+  busy: boolean;
+  onAccept: () => void;
+  onReject: () => void;
+}) {
+  const { item, busy, onAccept, onReject } = props;
+  const initial = item.nickname.slice(0, 1).toUpperCase();
+
+  return (
+    <view
+      style={{
+        width: '100%',
+        display: 'flex',
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: colors.card,
+        borderWidth: '1px',
+        borderColor: colors.cardBorder,
+        borderRadius: radius.md,
+        padding: spacing.md,
+        marginBottom: spacing.sm,
+      }}
+    >
+      <view
+        style={{
+          width: '42px',
+          height: '42px',
+          borderRadius: radius.full,
+          backgroundColor: colors.primarySoft,
+          display: 'flex',
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginRight: spacing.md,
+        }}
+        bindtap={() => push({ name: 'user-profile', params: { userId: item.userId } })}
+      >
+        <text style={{ color: colors.primary, fontSize: fontSize.md, fontWeight: '600' }}>
+          {initial}
+        </text>
+      </view>
+
+      <view style={{ flexGrow: 1, flexShrink: 1, flexBasis: '0px', display: 'flex', flexDirection: 'column' }}>
+        <text style={{ color: colors.text, fontSize: fontSize.md }} text-maxline="1">
+          {item.nickname}
+        </text>
+        <text style={{ color: colors.textFaint, fontSize: fontSize.xs }} text-maxline="1">
+          {item.email}
+        </text>
+      </view>
+
+      {item.incoming ? (
+        <view style={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
+          <view
+            style={{
+              width: '56px',
+              height: '34px',
+              borderRadius: radius.md,
+              backgroundColor: busy ? colors.surfaceAlt : colors.primary,
+              display: 'flex',
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginRight: spacing.sm,
+            }}
+            bindtap={onAccept}
+          >
+            <text style={{ color: '#FFFFFF', fontSize: fontSize.sm }}>接受</text>
+          </view>
+          <view
+            style={{
+              width: '56px',
+              height: '34px',
+              borderRadius: radius.md,
+              borderWidth: '1px',
+              borderColor: colors.cardBorder,
+              display: 'flex',
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+            bindtap={onReject}
+          >
+            <text style={{ color: colors.textMuted, fontSize: fontSize.sm }}>拒绝</text>
+          </view>
+        </view>
+      ) : (
+        <view
+          style={{
+            width: '56px',
+            height: '34px',
+            borderRadius: radius.md,
+            borderWidth: '1px',
+            borderColor: colors.cardBorder,
+            display: 'flex',
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+          bindtap={onReject}
+        >
+          <text style={{ color: colors.textMuted, fontSize: fontSize.sm }}>撤回</text>
+        </view>
+      )}
+    </view>
+  );
+}

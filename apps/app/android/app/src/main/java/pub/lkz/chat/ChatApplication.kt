@@ -8,6 +8,7 @@ import com.facebook.imagepipeline.memory.PoolConfig
 import com.facebook.imagepipeline.memory.PoolFactory
 import com.lynx.service.image.LynxImageService
 import com.lynx.service.log.LynxLogService
+import com.lynx.service.http.LynxHttpService
 import com.lynx.tasm.LynxEnv
 import com.lynx.tasm.service.LynxServiceCenter
 import org.webrtc.PeerConnectionFactory
@@ -62,10 +63,10 @@ class ChatApplication : Application() {
          * 用途：黑屏问题时设为 true 可看到每一步状态；
          *      稳定后设为 false 即为正常 UI。
          */
-        const val SHOW_DEBUG_BAR = true
+        const val SHOW_DEBUG_BAR = false
 
         /** 构建标记：用户可在诊断条上看到，确认装的是新包 */
-        const val BUILD_TAG = "DIAG-8"
+        const val BUILD_TAG = "RC-1"
     }
 
     override fun onCreate() {
@@ -123,6 +124,8 @@ class ChatApplication : Application() {
         LynxServiceCenter.inst().registerService(LynxImageService.getInstance())
         // LynxLogService 是 Kotlin object，Kotlin 侧直接引用对象名
         LynxServiceCenter.inst().registerService(LynxLogService)
+        // HTTP 服务：没有它，前端 fetch 一律失败（引擎不内置网络实现）
+        LynxServiceCenter.inst().registerService(LynxHttpService)
     }
 
     /** 初始化 Lynx 引擎（必须在创建 LynxView 之前） */

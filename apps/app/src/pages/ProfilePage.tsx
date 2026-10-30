@@ -74,7 +74,7 @@ export function ProfilePage() {
         <view style={commonStyles.headerSide} />
       </view>
 
-      <scroll-view scroll-orientation="vertical" style={commonStyles.scroll}>
+      <view style={{ flex: 1, width: '100%', display: 'flex', flexDirection: 'column' }}>
         <view style={{ padding: spacing.lg, paddingBottom: spacing.xxxl }}>
           {/* 头像与邮箱：全部居中，用 margin 分隔 */}
           <view
@@ -86,11 +86,11 @@ export function ProfilePage() {
           >
             <view
               style={{
-                width: 76,
-                height: 76,
+                width: '76px',
+                height: '76px',
                 borderRadius: radius.full,
                 backgroundColor: colors.primarySoft,
-                borderWidth: 1,
+                borderWidth: '1px',
                 borderColor: colors.cardBorder,
                 display: 'flex',
                 alignItems: 'center',
@@ -98,7 +98,7 @@ export function ProfilePage() {
                 marginBottom: spacing.md,
               }}
             >
-              <text style={{ color: colors.primary, fontSize: 30, fontWeight: '600' }}>
+              <text style={{ color: colors.primary, fontSize: '30px', fontWeight: '600' }}>
                 {(user?.nickname ?? '?').slice(0, 1)}
               </text>
             </view>
@@ -130,8 +130,8 @@ export function ProfilePage() {
                 borderRadius: radius.full,
                 paddingLeft: spacing.md,
                 paddingRight: spacing.md,
-                paddingTop: 4,
-                paddingBottom: 4,
+                paddingTop: '4px',
+                paddingBottom: '4px',
                 marginTop: spacing.md,
               }}
             >
@@ -206,7 +206,7 @@ export function ProfilePage() {
             <text style={{ color: colors.danger, fontSize: fontSize.md }}>退出登录</text>
           </view>
         </view>
-      </scroll-view>
+      </view>
     </view>
   );
 }

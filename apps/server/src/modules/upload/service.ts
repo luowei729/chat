@@ -17,6 +17,7 @@
 
 import {
   ATTACHMENT_KINDS,
+  ATTACHMENT_TTL_MS,
   ErrorCode,
   MAX_UPLOAD_BYTES,
   type AttachmentKind,
@@ -220,6 +221,9 @@ export async function saveUpload(params: {
     messageId: null,
     sortOrder: 0,
     createdAt: now,
+    // 服务器只保留 ATTACHMENT_TTL_DAYS 天，到期后定时任务删文件并置 expiredAt
+    expiresAt: now + ATTACHMENT_TTL_MS,
+    expiredAt: null,
   });
 
   const rows = await db.select().from(attachments).where(eq(attachments.id, id)).limit(1);
@@ -241,9 +245,15 @@ export interface MediaLookup {
   filename: string;
   mime: string;
   size: number;
+  /** 是否已过期（文件已被清理） */
+  expired: boolean;
 }
 
-/** 按 id 查附件，返回内部文件路径信息 */
+/**
+ * 按 id 查附件，返回内部文件路径信息
+ * 已过期的附件会带上 expired 标记，路由层据此返回 410 Gone，
+ * 让客户端能明确区分「文件过期」与「链接写错」。
+ */
 export async function findAttachment(attachmentId: string): Promise<MediaLookup> {
   const rows = await db
     .select({
@@ -252,6 +262,8 @@ export async function findAttachment(attachmentId: string): Promise<MediaLookup>
       filename: attachments.filename,
       mime: attachments.mime,
       size: attachments.size,
+      expiredAt: attachments.expiredAt,
+      expiresAt: attachments.expiresAt,
     })
     .from(attachments)
     .where(eq(attachments.id, attachmentId))
@@ -259,7 +271,19 @@ export async function findAttachment(attachmentId: string): Promise<MediaLookup>
 
   const row = rows[0];
   if (!row) throw new AppError(ErrorCode.ATTACHMENT_NOT_FOUND);
-  return row;
+
+  const expired =
+    (row.expiredAt !== null && row.expiredAt > 0) ||
+    (row.expiresAt > 0 && row.expiresAt <= Date.now());
+
+  return {
+    id: row.id,
+    storagePath: row.storagePath,
+    filename: row.filename,
+    mime: row.mime,
+    size: row.size,
+    expired,
+  };
 }
 
 /** 打开文件流（Range 请求由 OpenResty 处理，这里只负责读整个文件） */
@@ -289,4 +313,98 @@ export async function cleanupOrphanAttachments(olderThanMs = 24 * 60 * 60 * 1000
 
   if (rows.length > 0) log.info({ count: rows.length }, '清理孤儿附件');
   return rows.length;
+}
+
+/**
+ * 清理过期聊天文件（释放磁盘空间的核心任务）
+ * ============================================================
+ * 【关键设计：只删文件，不删记录】
+ *
+ * 到期后执行：
+ *   1. unlink 磁盘上的文件（图片/视频/语音/文件本体）；
+ *   2. 把 expiredAt 写成当前时间；
+ *   3. **保留 attachments 行与 messages 行**。
+ *
+ * 这样做的原因：
+ *   - 聊天记录不会出现空洞：消息的时间、发送者、类型都还在，
+ *     客户端收到 expired=true 的附件后显示「文件已过期」占位；
+ *   - 用户能看到「这里曾经发过一个文件」，符合微信/TG 的体验；
+ *   - 若直接删 attachments 行，消息就变成一条没有任何内容的空消息，
+ *     用户会以为聊天记录丢失。
+ *
+ * 【磁盘真正释放点】
+ * 同一 sha256 可能被多条 attachment 行引用（内容寻址去重）。
+ * 因此必须确认「该 sha256 已无任何未过期引用」才能删物理文件，
+ * 否则会把别人还在用的文件删掉。
+ *
+ * 每次只处理 batchSize 条，避免一次性扫全表把 2 核机器压满。
+ * ============================================================
+ */
+export async function cleanupExpiredAttachments(batchSize = 200): Promise<{
+  filesDeleted: number;
+  bytesFreed: number;
+  marked: number;
+}> {
+  const { and, isNull, lte, ne } = await import('drizzle-orm');
+  const now = Date.now();
+
+  // 待处理：已到期、且尚未标记过期
+  const rows = await db
+    .select({
+      id: attachments.id,
+      sha256: attachments.sha256,
+      storagePath: attachments.storagePath,
+      thumbPath: attachments.thumbPath,
+      size: attachments.size,
+    })
+    .from(attachments)
+    .where(and(lte(attachments.expiresAt, now), isNull(attachments.expiredAt)))
+    .limit(batchSize);
+
+  if (rows.length === 0) return { filesDeleted: 0, bytesFreed: 0, marked: 0 };
+
+  let filesDeleted = 0;
+  let bytesFreed = 0;
+
+  for (const row of rows) {
+    /**
+     * 内容寻址去重：同一 sha256 可能被多条 attachment 引用。
+     * 只有「除自己以外没有任何未过期引用」时才能删物理文件，
+     * 否则会把其他用户还在用的文件删掉。
+     */
+    const otherLiveRows = await db
+      .select({ id: attachments.id })
+      .from(attachments)
+      .where(
+        and(
+          eq(attachments.sha256, row.sha256),
+          ne(attachments.id, row.id),
+          isNull(attachments.expiredAt),
+        ),
+      )
+      .limit(1);
+
+    if (otherLiveRows.length === 0) {
+      try {
+        await unlink(join(config.upload.dir, row.storagePath));
+        filesDeleted += 1;
+        bytesFreed += row.size;
+      } catch {
+        // 文件可能已不存在（人工清理过），继续标记即可
+      }
+      if (row.thumbPath) {
+        await unlink(join(config.upload.dir, row.thumbPath)).catch(() => undefined);
+      }
+    }
+
+    // 无论文件是否删除成功都标记过期，避免同一条记录被反复扫描
+    await db.update(attachments).set({ expiredAt: now }).where(eq(attachments.id, row.id));
+  }
+
+  log.info(
+    { marked: rows.length, filesDeleted, mb: (bytesFreed / 1024 / 1024).toFixed(1) },
+    '清理过期聊天文件',
+  );
+
+  return { filesDeleted, bytesFreed, marked: rows.length };
 }

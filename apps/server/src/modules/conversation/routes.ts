@@ -17,11 +17,12 @@ import {
   createGroupSchema,
   updateMemberSchema,
 } from '@chat/shared';
+import { z } from 'zod';
 import type { FastifyInstance } from 'fastify';
 import { AppError } from '../../lib/app-error.js';
 import { ok } from '../../lib/http.js';
 import * as service from './service.js';
-import { notifyNewConversation } from '../../ws/gateway.js';
+import { notifyNewConversation, notifyGroupMembersChanged } from '../../ws/gateway.js';
 
 /** 统一处理 zod 校验失败 */
 function parseOrThrow<T>(schema: { safeParse: (v: unknown) => { success: boolean; data?: T; error?: { issues: Array<{ path: (string | number)[]; message: string }> } } }, body: unknown): T {
@@ -102,6 +103,105 @@ export default async function conversationRoutes(app: FastifyInstance): Promise<
         req.body,
       );
       await service.updateMember(req.params.id, req.userId, input.userId, input.action);
+      return ok(reply, { success: true });
+    },
+  );
+
+  /* ---------------- 群成员列表 ---------------- */
+  app.get<{ Params: { id: string } }>(
+    '/conversations/:id/members',
+    { preHandler: [app.requireAuth] },
+    async (req, reply) => {
+      const members = await service.listGroupMembers(req.params.id, req.userId);
+      return ok(reply, members);
+    },
+  );
+
+  /* ---------------- 邀请成员入群 ---------------- */
+  app.post<{ Params: { id: string } }>(
+    '/conversations/:id/members',
+    { preHandler: [app.requireAuth] },
+    async (req, reply) => {
+      const input = parseOrThrow<{ userIds: string[] }>(
+        z.object({ userIds: z.array(z.string().min(1).max(26)).min(1).max(50) }),
+        req.body,
+      );
+      const result = await service.inviteMembers(req.params.id, req.userId, input.userIds);
+
+      // 通知全体成员（含新入群的）
+      const all = await service.activeMemberIds(req.params.id);
+      notifyGroupMembersChanged({
+        conversationId: req.params.id,
+        memberIds: all,
+        userIds: result.added,
+      });
+      notifyNewConversation(result.added, req.params.id);
+
+      return ok(reply, result);
+    },
+  );
+
+  /* ---------------- 退群 ---------------- */
+  app.post<{ Params: { id: string } }>(
+    '/conversations/:id/leave',
+    { preHandler: [app.requireAuth] },
+    async (req, reply) => {
+      await service.leaveGroup(req.params.id, req.userId);
+
+      const remaining = await service.activeMemberIds(req.params.id);
+      notifyGroupMembersChanged({
+        conversationId: req.params.id,
+        memberIds: remaining,
+        userIds: [req.userId],
+      });
+
+      return ok(reply, { success: true });
+    },
+  );
+
+  /* ---------------- 转让群主 ---------------- */
+  app.post<{ Params: { id: string } }>(
+    '/conversations/:id/transfer',
+    { preHandler: [app.requireAuth] },
+    async (req, reply) => {
+      const input = parseOrThrow<{ userId: string }>(
+        z.object({ userId: z.string().min(1).max(26) }),
+        req.body,
+      );
+      await service.transferOwner(req.params.id, req.userId, input.userId);
+
+      const all = await service.activeMemberIds(req.params.id);
+      notifyGroupMembersChanged({
+        conversationId: req.params.id,
+        memberIds: all,
+        userIds: [req.userId, input.userId],
+      });
+
+      return ok(reply, { success: true });
+    },
+  );
+
+  /* ---------------- 修改群资料 ---------------- */
+  app.patch<{ Params: { id: string } }>(
+    '/conversations/:id/info',
+    { preHandler: [app.requireAuth] },
+    async (req, reply) => {
+      const input = parseOrThrow<{ title?: string; avatarUrl?: string | null }>(
+        z.object({
+          title: z.string().min(1).max(64).optional(),
+          avatarUrl: z.string().max(512).nullable().optional(),
+        }),
+        req.body,
+      );
+      await service.updateGroupInfo(req.params.id, req.userId, input);
+
+      const all = await service.activeMemberIds(req.params.id);
+      notifyGroupMembersChanged({
+        conversationId: req.params.id,
+        memberIds: all,
+        userIds: [req.userId],
+      });
+
       return ok(reply, { success: true });
     },
   );

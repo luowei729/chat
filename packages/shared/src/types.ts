@@ -240,6 +240,22 @@ export interface Attachment {
   durationMs: number | null;
   /** 语音波形（0-100 的整数数组，用于气泡绘制） */
   waveform: number[] | null;
+
+  /**
+   * 文件在服务器上的过期时间（毫秒时间戳）。
+   * 到期后服务器删除文件本体，但本条消息与此附件记录保留。
+   */
+  expiresAt: number;
+  /**
+   * 是否已过期（服务器文件已删除）。
+   * true 时 url / thumbUrl 为空字符串，客户端应显示「文件已过期」占位。
+   */
+  expired: boolean;
+  /**
+   * 是否即将过期（剩余不足 ATTACHMENT_EXPIRING_SOON_DAYS 天）。
+   * 客户端可据此提示用户尽快保存到本地。
+   */
+  expiringSoon: boolean;
 }
 
 export interface Message {
@@ -335,4 +351,182 @@ export interface HealthResponse {
   uptimeSeconds: number;
   db: 'up' | 'down';
   wsClients: number;
+}
+
+/* ------------------------------------------------------------------ */
+/* 好友与联系人                                                         */
+/* ------------------------------------------------------------------ */
+
+/** 好友关系状态 */
+export type FriendStatus = 'pending' | 'accepted' | 'blocked';
+
+/**
+ * 好友列表项
+ * 说明：remark 是我给 TA 设的备注名，优先于 nickname 显示。
+ */
+export interface FriendItem {
+  userId: string;
+  email: string;
+  nickname: string;
+  avatarUrl: string | null;
+  bio: string | null;
+  /** 我设置的备注名；null 表示未设置 */
+  remark: string | null;
+  /** 展示名：remark ?? nickname，服务端算好省得前端各自实现 */
+  displayName: string;
+  lastSeenAt: number | null;
+  /** 私聊会话 id；已存在则点击可直接进入聊天 */
+  conversationId: string | null;
+}
+
+/** 好友请求项 */
+export interface FriendRequestItem {
+  /** 谁发起的请求 */
+  userId: string;
+  email: string;
+  nickname: string;
+  avatarUrl: string | null;
+  /** true = 我收到的；false = 我发出的 */
+  incoming: boolean;
+  createdAt: number;
+}
+
+/** 好友请求列表（收到的 + 发出的） */
+export interface FriendRequests {
+  incoming: FriendRequestItem[];
+  outgoing: FriendRequestItem[];
+}
+
+/** 用户可加好友状态：用于资料页决定按钮文案 */
+export type RelationState =
+  | 'self'
+  | 'friend'
+  | 'request-sent'
+  | 'request-received'
+  | 'blocked'
+  | 'none';
+
+/** 他人资料页数据 */
+export interface UserProfileView extends UserPublic {
+  relation: RelationState;
+  /** 我给 TA 设的备注名 */
+  remark: string | null;
+  /** 与 TA 的私聊会话 id（好友且已建会话时存在） */
+  conversationId: string | null;
+}
+
+/* ------------------------------------------------------------------ */
+/* 群成员管理                                                           */
+/* ------------------------------------------------------------------ */
+
+/** 群成员角色 */
+export type GroupRole = 'owner' | 'admin' | 'member';
+
+/** 群成员条目 */
+export interface GroupMemberItem {
+  userId: string;
+  email: string;
+  nickname: string;
+  avatarUrl: string | null;
+  /** 我在自己设备上给他的备注名（若有） */
+  remark: string | null;
+  displayName: string;
+  role: GroupRole;
+  lastSeenAt: number | null;
+}
+
+/* ------------------------------------------------------------------ */
+/* 消息表情回应                                                         */
+/* ------------------------------------------------------------------ */
+
+/** 单个表情的聚合结果 */
+export interface ReactionSummary {
+  emoji: string;
+  count: number;
+  /** 是否包含我自己，用于高亮已选表情 */
+  mine: boolean;
+  /** 点了该表情的用户 id，长按可看名单 */
+  userIds: string[];
+}
+
+/* ------------------------------------------------------------------ */
+/* 已读回执                                                             */
+/* ------------------------------------------------------------------ */
+
+export interface ReadReceipt {
+  userId: string;
+  nickname: string;
+  displayName: string;
+  /** 已读到的消息序号 */
+  lastReadSeq: number;
+}
+
+/* ------------------------------------------------------------------ */
+/* 增量同步（多端同步的核心）                                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 增量同步请求的游标
+ * ------------------------------------------------------------
+ * 客户端保存上次同步的 updatedAt 时间戳与各会话的 seq 水位，
+ * 之后只拉「比游标新」的数据，避免每次全量刷新。
+ *
+ * 资源收益（2 核 1.8G 服务器）：
+ *   全量刷新：每次进入 App 要扫全部会话 + 每会话查最新 N 条消息
+ *   增量同步：一次查询按 updatedAt 索引扫新增行，通常 0~20 行
+ * 实测在 100 会话 / 1 万消息量级下，查询耗时从 ~40ms 降到 ~2ms。
+ */
+export interface SyncCursor {
+  /** 上次同步时间（毫秒），服务端返回比它更新的数据 */
+  since: number;
+}
+
+/** 变更过的会话及其未读数 */
+export interface SyncConversationChange {
+  conversation: ConversationSummary;
+  /** 该会话中比游标新的消息数（用于客户端判断要不要拉消息） */
+  changed: boolean;
+}
+
+/** 增量同步返回体 */
+export interface SyncResult {
+  /** 服务端当前时间，客户端下次请求时作为 since */
+  serverTime: number;
+  /** 有变化的会话（新增/更新/被移出） */
+  conversations: ConversationSummary[];
+  /** 已删除的会话 id，客户端应从列表移除 */
+  removedConversationIds: string[];
+  /** 好友关系是否有变化（有则客户端刷新通讯录） */
+  friendsChanged: boolean;
+  /** 待处理好友请求数（红点用） */
+  pendingFriendRequests: number;
+}
+
+/* ------------------------------------------------------------------ */
+/* 消息搜索                                                             */
+/* ------------------------------------------------------------------ */
+
+/** 消息搜索结果项 */
+export interface MessageSearchHit {
+  messageId: string;
+  conversationId: string;
+  /** 会话展示名（私聊为对方昵称/备注，群聊为群名） */
+  conversationTitle: string;
+  senderId: string;
+  senderName: string;
+  /** 消息类型 */
+  type: string;
+  /** 命中片段，命中词用 \u0002 \u0003 包裹，客户端高亮 */
+  snippet: string;
+  seq: number;
+  createdAt: number;
+}
+
+/** 搜索响应 */
+export interface MessageSearchResult {
+  hits: MessageSearchHit[];
+  /** 总命中数（用于展示「共 N 条」） */
+  total: number;
+  hasMore: boolean;
+  nextCursor: string | null;
 }

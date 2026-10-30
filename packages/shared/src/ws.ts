@@ -201,6 +201,25 @@ export interface WsReadUpdatedMessage {
   seq: number;
 }
 
+/** 消息表情回应变化 */
+export interface WsReactionUpdatedMessage {
+  type: 'reaction.updated';
+  conversationId: string;
+  messageId: string;
+  userId: string;
+  emoji: string;
+  /** true = 添加；false = 取消 */
+  added: boolean;
+}
+
+/** 群成员变动（入群/退群/被移除） */
+export interface WsGroupMembersChangedMessage {
+  type: 'group.members-changed';
+  conversationId: string;
+  /** 变动涉及的用户 */
+  userIds: string[];
+}
+
 /** 对方正在输入 */
 export interface WsTypingNotifyMessage {
   type: 'typing';
@@ -230,6 +249,35 @@ export interface WsConversationUpdatedMessage {
   lastMessage: MessagePreview | null;
   lastMessageAt: number | null;
   unreadCount: number;
+}
+
+/* ---------- 好友事件 ---------- */
+
+/** 收到新的好友请求（推给被请求方） */
+export interface WsFriendRequestMessage {
+  type: 'friend.request';
+  userId: string;
+  nickname: string;
+  avatarUrl: string | null;
+  createdAt: number;
+}
+
+/** 好友请求被接受（推给发起方，告知已成为好友） */
+export interface WsFriendAcceptedMessage {
+  type: 'friend.accepted';
+  userId: string;
+  nickname: string;
+  avatarUrl: string | null;
+  /** 同时把私聊会话 id 推过去，客户端可直接进入聊天 */
+  conversationId: string | null;
+}
+
+/** 好友关系被移除 / 拉黑 */
+export interface WsFriendRemovedMessage {
+  type: 'friend.removed';
+  userId: string;
+  /** true = 对方把我删了；false = 对方拉黑了我 */
+  blocked: boolean;
 }
 
 /* ---------- 通话事件 ---------- */
@@ -307,6 +355,11 @@ export type WsServerMessage =
   | WsPresenceMessage
   | WsConversationNewMessage
   | WsConversationUpdatedMessage
+  | WsFriendRequestMessage
+  | WsFriendAcceptedMessage
+  | WsFriendRemovedMessage
+  | WsReactionUpdatedMessage
+  | WsGroupMembersChangedMessage
   | WsCallIncomingMessage
   | WsCallStateMessage
   | WsCallP2pRelayMessage

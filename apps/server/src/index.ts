@@ -28,12 +28,15 @@ import authPlugin from './plugins/auth.js';
 import authRoutes from './modules/auth/routes.js';
 import callRoutes from './modules/call/routes.js';
 import conversationRoutes from './modules/conversation/routes.js';
+import friendRoutes from './modules/friend/routes.js';
 import inviteRoutes from './modules/invite/routes.js';
 import messageRoutes from './modules/message/routes.js';
+import searchRoutes from './modules/search/routes.js';
+import syncRoutes from './modules/sync/routes.js';
 import uploadRoutes from './modules/upload/routes.js';
 import userRoutes from './modules/user/routes.js';
 import wsPlugin, { onlineClientCount } from './ws/gateway.js';
-import { cleanupOrphanAttachments } from './modules/upload/service.js';
+import { cleanupExpiredAttachments, cleanupOrphanAttachments } from './modules/upload/service.js';
 import { cleanupStaleCalls } from './modules/call/service.js';
 import { verifySmtp } from './mail/index.js';
 
@@ -144,7 +147,10 @@ async function buildServer() {
   await app.register(userRoutes, { prefix: '/api' });
   await app.register(inviteRoutes, { prefix: '/api' });
   await app.register(conversationRoutes, { prefix: '/api' });
+  await app.register(friendRoutes, { prefix: '/api' });
   await app.register(messageRoutes, { prefix: '/api' });
+  await app.register(searchRoutes, { prefix: '/api' });
+  await app.register(syncRoutes, { prefix: '/api' });
   await app.register(uploadRoutes, { prefix: '/api' });
   await app.register(callRoutes, { prefix: '/api' });
 
@@ -171,10 +177,26 @@ async function main(): Promise<void> {
 
   const app = await buildServer();
 
-  // 后台任务：清理孤儿附件与陈旧通话记录（启动时先跑一次）
+  // 后台任务：清理孤儿附件、过期聊天文件与陈旧通话记录（启动时先跑一次）
   void cleanupOrphanAttachments().catch((e) => log.warn({ err: e }, '清理孤儿附件失败'));
+  void cleanupExpiredAttachments().catch((e) => log.warn({ err: e }, '清理过期附件失败'));
   void cleanupStaleCalls().catch((e) => log.warn({ err: e }, '清理陈旧通话失败'));
   void verifySmtp();
+
+  /**
+   * 过期聊天文件清理：每小时一轮，每轮最多 200 条
+   * ------------------------------------------------------------
+   * 为什么用「每小时 + 小批量」而不是「每天 + 全量」：
+   * 服务器只有 2 核，一次性 unlink 上千个文件会瞬时打满 IO，
+   * 影响正在进行的聊天请求。小批量可以把压力摊平。
+   */
+  const expiredTimer = setInterval(
+    () => {
+      void cleanupExpiredAttachments().catch(() => undefined);
+    },
+    60 * 60 * 1000,
+  );
+  expiredTimer.unref?.();
 
   // 每小时清理一次孤儿附件
   const cleanupTimer = setInterval(

@@ -180,10 +180,18 @@ export const conversations = mysqlTable(
     lastSeq: bigint('last_seq', { mode: 'number' }).notNull().default(0),
     lastMessageAt: bigint('last_message_at', { mode: 'number' }),
     createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+    /**
+     * 最后变更时间（建会话 / 改群资料 / 成员变动 / 新消息）
+     * 增量同步的核心：客户端只拉 updatedAt > since 的会话，
+     * 避免每次全量扫全部会话。
+     */
+    updatedAt: bigint('updated_at', { mode: 'number' }).notNull().default(0),
   },
   (t) => [
     uniqueIndex('uk_conversations_direct').on(t.directKey),
     index('idx_conversations_last_message').on(t.lastMessageAt),
+    /** 增量同步扫描用：按用户 + 更新时间定位变化会话 */
+    index('idx_conversations_updated').on(t.updatedAt),
   ],
 );
 
@@ -201,11 +209,19 @@ export const conversationMembers = mysqlTable(
     joinedAt: bigint('joined_at', { mode: 'number' }).notNull(),
     /** 退群时间；null 表示仍在群内（软删除保留历史） */
     leftAt: bigint('left_at', { mode: 'number' }),
+    /**
+     * 成员级别的最后变更时间（已读水位推进、置顶、静音、角色变化）。
+     * 增量同步靠它发现「我的会话列表有变化」，
+     * 而不必去看 conversations 表。
+     */
+    updatedAt: bigint('updated_at', { mode: 'number' }).notNull().default(0),
   },
   (t) => [
     primaryKey({ columns: [t.conversationId, t.userId] }),
     index('idx_members_user').on(t.userId),
     index('idx_members_active').on(t.userId, t.leftAt),
+    /** 增量同步：按用户 + 变更时间扫 */
+    index('idx_members_updated').on(t.userId, t.updatedAt),
   ],
 );
 
@@ -237,6 +253,21 @@ export const messages = mysqlTable(
     uniqueIndex('uk_messages_client').on(t.conversationId, t.senderId, t.clientId),
     index('idx_messages_conversation').on(t.conversationId, t.seq),
     index('idx_messages_sender').on(t.senderId),
+    /**
+     * 全文索引（MySQL FULLTEXT + ngram 分词）
+     *
+     * 为什么用 ngram 而不是默认分词：
+     * MySQL 内置分词器按空格切词，中文整句会被当成一个词，搜不到。
+     * ngram 按 2 字滑窗切分（ngram_token_size=2），中文检索准确率较高。
+     *
+     * 为什么用 FULLTEXT 而不是 LIKE '%kw%'：
+     * LIKE 前导通配符无法走索引，10 万条消息会全表扫描，
+     * 在 2 核机器上能直接卡死服务；FULLTEXT 走倒排索引，毫秒级返回。
+     *
+     * 注意：需要在迁移 SQL 里手动改成 WITH PARSER ngram，
+     * drizzle-kit 生成的普通 FULLTEXT 对中文无效（见 0002 迁移）。
+     */
+    index('ft_messages_text').on(t.text),
   ],
 );
 
@@ -270,11 +301,24 @@ export const attachments = mysqlTable(
     /** 同一条消息内多个附件的排序 */
     sortOrder: int('sort_order').notNull().default(0),
     createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+    /**
+     * 文件在服务器上的过期时间（毫秒时间戳）。
+     * 默认 createdAt + ATTACHMENT_TTL_MS（30 天）。
+     */
+    expiresAt: bigint('expires_at', { mode: 'number' }).notNull().default(0),
+    /**
+     * 实际删除文件的时间；null 表示文件仍在服务器上。
+     * 只删文件、不删本条记录，这样消息与附件元数据完整保留，
+     * 客户端可以显示「文件已过期」而不是让聊天记录出现空洞。
+     */
+    expiredAt: bigint('expired_at', { mode: 'number' }),
   },
   (t) => [
     index('idx_attachments_sha').on(t.sha256),
     index('idx_attachments_message').on(t.messageId),
     index('idx_attachments_uploader').on(t.uploaderId),
+    /** 定时清理扫描用：只扫未过期记录的 expires_at */
+    index('idx_attachments_expires').on(t.expiredAt, t.expiresAt),
   ],
 );
 
@@ -349,6 +393,97 @@ export const pushTokens = mysqlTable(
 /* 关系定义（仅供 drizzle 查询辅助，不强制使用）                          */
 /* ------------------------------------------------------------------ */
 
+/* ------------------------------------------------------------------ */
+/* 好友关系                                                             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 好友关系
+ * ============================================================
+ * 【为什么双向存两条记录】
+ * 单条记录（A,B 有序对）查「我的好友」需要 WHERE a=me OR b=me，
+ * 无法有效利用索引；双向存两条后只需 WHERE user_id=me，
+ * 配合 idx_friendships_user 直接命中。
+ * 另外单向拉黑（我拉黑他、他没拉黑我）也只有双向模型能表达。
+ *
+ * status 语义：
+ *   pending  —— 请求中（requesterId 是发起方）
+ *   accepted —— 已成为好友
+ *   blocked  —— userId 拉黑了 friendId（单向，不影响对方那条记录）
+ * ============================================================
+ */
+export const friendships = mysqlTable(
+  'friendships',
+  {
+    /** 关系拥有者（"我的好友列表里有哪些人" 就是查这个字段） */
+    userId: varchar('user_id', { length: 26 }).notNull(),
+    /** 对方 */
+    friendId: varchar('friend_id', { length: 26 }).notNull(),
+    /** pending | accepted | blocked */
+    status: varchar('status', { length: 10 }).notNull(),
+    /** 请求发起方，用于区分「我发出的」与「我收到的」 */
+    requesterId: varchar('requester_id', { length: 26 }).notNull(),
+    createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+    acceptedAt: bigint('accepted_at', { mode: 'number' }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.friendId] }),
+    index('idx_friendships_user').on(t.userId, t.status),
+    index('idx_friendships_friend').on(t.friendId, t.status),
+  ],
+);
+
+/**
+ * 联系人备注名
+ * ============================================================
+ * 独立于好友关系存在，原因：
+ * 1. 删除好友后重新添加，备注名仍然保留（符合用户直觉）；
+ * 2. 未来可扩展群昵称（加 scope 字段区分 friend / group）。
+ * ============================================================
+ */
+export const contactRemarks = mysqlTable(
+  'contact_remarks',
+  {
+    /** 备注的拥有者 */
+    ownerId: varchar('owner_id', { length: 26 }).notNull(),
+    /** 被备注的人 */
+    targetId: varchar('target_id', { length: 26 }).notNull(),
+    /** 自定义显示名；空串等价于清除 */
+    remark: varchar('remark', { length: 32 }).notNull(),
+    updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.ownerId, t.targetId] }),
+  ],
+);
+
+/* ------------------------------------------------------------------ */
+/* 消息表情回应                                                         */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 消息表情回应
+ * 同一个人对同一条消息的同一个表情只能有一条（联合主键保证幂等）。
+ */
+export const messageReactions = mysqlTable(
+  'message_reactions',
+  {
+    messageId: varchar('message_id', { length: 26 }).notNull(),
+    userId: varchar('user_id', { length: 26 }).notNull(),
+    /** 单个 emoji 字符，最长 8 字节足够容纳多码位表情 */
+    emoji: varchar('emoji', { length: 8 }).notNull(),
+    createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.messageId, t.userId, t.emoji] }),
+    index('idx_reactions_message').on(t.messageId),
+  ],
+);
+
+/* ------------------------------------------------------------------ */
+/* 关系定义与类型导出                                                   */
+/* ------------------------------------------------------------------ */
+
 export const usersRelations = relations(users, ({ many }) => ({
   messages: many(messages),
   memberships: many(conversationMembers),
@@ -365,6 +500,14 @@ export const messagesRelations = relations(messages, ({ one, many }) => ({
     references: [conversations.id],
   }),
   attachments: many(attachments),
+  reactions: many(messageReactions),
+}));
+
+export const messageReactionsRelations = relations(messageReactions, ({ one }) => ({
+  message: one(messages, {
+    fields: [messageReactions.messageId],
+    references: [messages.id],
+  }),
 }));
 
 /** 表类型导出：仓储层直接用 */
@@ -379,3 +522,6 @@ export type AttachmentRow = typeof attachments.$inferSelect;
 export type CallSessionRow = typeof callSessions.$inferSelect;
 export type CallParticipantRow = typeof callParticipants.$inferSelect;
 export type PushTokenRow = typeof pushTokens.$inferSelect;
+export type FriendshipRow = typeof friendships.$inferSelect;
+export type ContactRemarkRow = typeof contactRemarks.$inferSelect;
+export type MessageReactionRow = typeof messageReactions.$inferSelect;

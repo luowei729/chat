@@ -595,4 +595,76 @@ export function notifyNewConversation(userIds: string[], conversationId: string)
   sendToUsers(userIds, { type: 'conversation.new', conversationId });
 }
 
+/* ------------------------------------------------------------------ */
+/* 好友事件通知                                                         */
+/* ------------------------------------------------------------------ */
+
+/** 有人向我发起好友请求 */
+export function notifyFriendRequest(
+  targetUserId: string,
+  payload: { userId: string; nickname: string; avatarUrl: string | null; createdAt: number },
+): void {
+  sendToUsers([targetUserId], { type: 'friend.request', ...payload });
+}
+
+/** 好友请求被接受 */
+export function notifyFriendAccepted(
+  targetUserId: string,
+  payload: {
+    userId: string;
+    nickname: string;
+    avatarUrl: string | null;
+    conversationId: string | null;
+  },
+): void {
+  sendToUsers([targetUserId], { type: 'friend.accepted', ...payload });
+}
+
+/** 好友被删除 / 被拉黑 */
+export function notifyFriendRemoved(
+  targetUserId: string,
+  payload: { userId: string; blocked: boolean },
+): void {
+  sendToUsers([targetUserId], { type: 'friend.removed', ...payload });
+}
+
+/* ------------------------------------------------------------------ */
+/* 消息回应与群成员变动通知                                             */
+/* ------------------------------------------------------------------ */
+
+/** 表情回应变化：推给会话内除操作者外的成员 */
+export function notifyReactionUpdated(params: {
+  conversationId: string;
+  memberIds: string[];
+  actorId: string;
+  messageId: string;
+  emoji: string;
+  added: boolean;
+}): void {
+  const targets = params.memberIds.filter((id) => id !== params.actorId);
+  if (targets.length === 0) return;
+  sendToUsers(targets, {
+    type: 'reaction.updated',
+    conversationId: params.conversationId,
+    messageId: params.messageId,
+    userId: params.actorId,
+    emoji: params.emoji,
+    added: params.added,
+  });
+}
+
+/** 群成员变动 */
+export function notifyGroupMembersChanged(params: {
+  conversationId: string;
+  memberIds: string[];
+  userIds: string[];
+}): void {
+  if (params.memberIds.length === 0) return;
+  sendToUsers(params.memberIds, {
+    type: 'group.members-changed',
+    conversationId: params.conversationId,
+    userIds: params.userIds,
+  });
+}
+
 export { messageService };

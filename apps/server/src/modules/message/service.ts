@@ -13,6 +13,8 @@
  */
 
 import {
+  ATTACHMENT_EXPIRING_SOON_DAYS,
+  ATTACHMENT_TTL_MS,
   ErrorCode,
   MESSAGE_PAGE_SIZE,
   messageSummary,
@@ -21,6 +23,7 @@ import {
   type MessagePreview,
   type MessageType,
   type Page,
+  type ReactionSummary,
   type SendMessageRequest,
 } from '@chat/shared';
 import { and, asc, desc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
@@ -30,6 +33,7 @@ import {
   attachments,
   conversationMembers,
   conversations,
+  messageReactions,
   messages,
   users,
 } from '../../db/schema.js';
@@ -45,13 +49,46 @@ import { requireMember } from '../conversation/service.js';
 
 /**
  * 把附件行转成客户端可用的 DTO
- * 说明：URL 带签名与过期时间，防止被外部盗链刷流量。
- *      签名只绑 attachmentId 与过期时间，同一附件多次生成结果一致，便于缓存。
+ * ============================================================
+ * 签名说明：URL 带签名与过期时间，防止被外部盗链刷流量。
+ *          签名只绑 attachmentId 与过期时间，同一附件多次生成结果一致，便于缓存。
+ *
+ * 【过期处理】
+ * 文件在服务器只保留 ATTACHMENT_TTL_DAYS 天。
+ * 到期后定时任务删除文件本体并把 expiredAt 置为删除时间，
+ * 但**本记录与消息都保留**，所以这里要区分两种情况：
+ *
+ *   expired = true  → url / thumbUrl 返回空串，
+ *                     客户端据此显示「文件已过期」占位，
+ *                     而不是尝试去加载一个必然 404 的地址。
+ *   expired = false → 正常签名 URL。
+ *
+ * 这样聊天记录不会出现空洞（微信/TG 的行为一致）。
+ * ============================================================
  */
 export function toAttachmentDto(row: typeof attachments.$inferSelect): Attachment {
-  const expiresAt = Math.floor(Date.now() / 1000) + config.upload.urlTtlSeconds;
-  const sig = signMediaUrl(row.id, expiresAt);
-  const base = `/api/media/${row.id}?e=${expiresAt}&s=${sig}`;
+  const now = Date.now();
+  const expired = row.expiredAt !== null && row.expiredAt > 0;
+
+  // 过期判定兼容两种来源：显式删除标记 或 时间已过但清理任务还没跑到
+  const pastDue = row.expiresAt > 0 && row.expiresAt <= now;
+  const treatAsExpired = expired || pastDue;
+
+  const expiringSoon =
+    !treatAsExpired &&
+    row.expiresAt > 0 &&
+    row.expiresAt - now <= ATTACHMENT_EXPIRING_SOON_DAYS * 24 * 60 * 60 * 1000;
+
+  let url = '';
+  let thumbUrl: string | null = null;
+
+  if (!treatAsExpired) {
+    const sigExpiresAt = Math.floor(now / 1000) + config.upload.urlTtlSeconds;
+    const sig = signMediaUrl(row.id, sigExpiresAt);
+    const base = `/api/media/${row.id}?e=${sigExpiresAt}&s=${sig}`;
+    url = base;
+    thumbUrl = row.thumbPath ? `${base}&t=1` : null;
+  }
 
   return {
     id: row.id,
@@ -59,12 +96,15 @@ export function toAttachmentDto(row: typeof attachments.$inferSelect): Attachmen
     filename: row.filename,
     mime: row.mime,
     size: row.size,
-    url: base,
-    thumbUrl: row.thumbPath ? `${base}&t=1` : null,
+    url,
+    thumbUrl,
     width: row.width ?? null,
     height: row.height ?? null,
     durationMs: row.durationMs ?? null,
     waveform: (row.waveform as number[] | null) ?? null,
+    expiresAt: row.expiresAt > 0 ? row.expiresAt : row.createdAt + ATTACHMENT_TTL_MS,
+    expired: treatAsExpired,
+    expiringSoon,
   };
 }
 
@@ -266,9 +306,16 @@ export async function sendMessage(
   try {
     await conn.beginTransaction();
 
+    /**
+     * 一次 UPDATE 同时推进三件事，零额外成本：
+     *   last_seq    —— 消息序号水位
+     *   last_message_at —— 会话列表排序依据
+     *   updated_at  —— 增量同步依据（客户端只拉 > since 的会话）
+     * 把 updated_at 合进这条语句，比单独再 UPDATE 一次省一个往返。
+     */
     await conn.execute<ResultSetHeader>(
-      'UPDATE conversations SET last_seq = last_seq + 1, last_message_at = ? WHERE id = ?',
-      [now, conversationId],
+      'UPDATE conversations SET last_seq = last_seq + 1, last_message_at = ?, updated_at = ? WHERE id = ?',
+      [now, now, conversationId],
     );
 
     const [seqRows] = await conn.query<import('mysql2').RowDataPacket[]>(
@@ -424,6 +471,188 @@ export async function deleteMessage(
 /* ------------------------------------------------------------------ */
 /* 会话摘要（推送时用）                                                  */
 /* ------------------------------------------------------------------ */
+
+/* ------------------------------------------------------------------ */
+/* 表情回应                                                             */
+/* ------------------------------------------------------------------ */
+
+/** 查询某条消息的回应聚合（按 emoji 分组） */
+async function loadReactions(
+  conversationId: string,
+  messageIds: string[],
+  viewerId: string,
+): Promise<Map<string, ReactionSummary[]>> {
+  const out = new Map<string, ReactionSummary[]>();
+  if (messageIds.length === 0) return out;
+
+  const rows = await db
+    .select({
+      messageId: messageReactions.messageId,
+      emoji: messageReactions.emoji,
+      userId: messageReactions.userId,
+    })
+    .from(messageReactions)
+    .where(inArray(messageReactions.messageId, messageIds));
+
+  // 先按 messageId 聚合，再按 emoji 聚合
+  const byMessage = new Map<string, Map<string, string[]>>();
+  for (const r of rows) {
+    let emojiMap = byMessage.get(r.messageId);
+    if (!emojiMap) {
+      emojiMap = new Map();
+      byMessage.set(r.messageId, emojiMap);
+    }
+    const users = emojiMap.get(r.emoji) ?? [];
+    users.push(r.userId);
+    emojiMap.set(r.emoji, users);
+  }
+
+  for (const [messageId, emojiMap] of byMessage) {
+    const list: ReactionSummary[] = [];
+    for (const [emoji, userIds] of emojiMap) {
+      list.push({
+        emoji,
+        count: userIds.length,
+        mine: userIds.includes(viewerId),
+        userIds,
+      });
+    }
+    // 数量多的排前面，稳定展示
+    list.sort((a, b) => b.count - a.count);
+    out.set(messageId, list);
+  }
+
+  void conversationId;
+  return out;
+}
+
+/** 添加回应（幂等：重复点同一个表情不会报错） */
+export async function addReaction(
+  conversationId: string,
+  messageId: string,
+  userId: string,
+  emoji: string,
+): Promise<{ memberIds: string[]; reactions: ReactionSummary[] }> {
+  await requireMember(conversationId, userId);
+
+  // 校验消息确实在这个会话里
+  const [msg] = await db
+    .select({ id: messages.id })
+    .from(messages)
+    .where(and(eq(messages.id, messageId), eq(messages.conversationId, conversationId)))
+    .limit(1);
+  if (!msg) throw new AppError(ErrorCode.REACTION_TARGET_INVALID);
+
+  await db
+    .insert(messageReactions)
+    .values({ messageId, userId, emoji, createdAt: Date.now() })
+    .onDuplicateKeyUpdate({ set: { createdAt: Date.now() } });
+
+  const [memberRows, reactions] = await Promise.all([
+    db
+      .select({ userId: conversationMembers.userId })
+      .from(conversationMembers)
+      .where(
+        and(eq(conversationMembers.conversationId, conversationId), isNull(conversationMembers.leftAt)),
+      ),
+    loadReactions(conversationId, [messageId], userId),
+  ]);
+
+  return {
+    memberIds: memberRows.map((m) => m.userId),
+    reactions: reactions.get(messageId) ?? [],
+  };
+}
+
+/** 取消回应 */
+export async function removeReaction(
+  conversationId: string,
+  messageId: string,
+  userId: string,
+  emoji: string,
+): Promise<{ memberIds: string[]; reactions: ReactionSummary[] }> {
+  await requireMember(conversationId, userId);
+
+  await db
+    .delete(messageReactions)
+    .where(
+      and(
+        eq(messageReactions.messageId, messageId),
+        eq(messageReactions.userId, userId),
+        eq(messageReactions.emoji, emoji),
+      ),
+    );
+
+  const [memberRows, reactions] = await Promise.all([
+    db
+      .select({ userId: conversationMembers.userId })
+      .from(conversationMembers)
+      .where(
+        and(eq(conversationMembers.conversationId, conversationId), isNull(conversationMembers.leftAt)),
+      ),
+    loadReactions(conversationId, [messageId], userId),
+  ]);
+
+  return {
+    memberIds: memberRows.map((m) => m.userId),
+    reactions: reactions.get(messageId) ?? [],
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* 转发消息                                                             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 转发消息到多个会话
+ * 实现方式：读出源消息内容，在目标会话各新建一条消息（不共享 id）。
+ * 这样撤回/删除互不影响，符合 Telegram 的行为。
+ * 附件会被重新绑定到新消息（允许一个附件被多条消息引用是设计使然）。
+ */
+export async function forwardMessage(
+  sourceConversationId: string,
+  messageId: string,
+  userId: string,
+  targetConversationIds: string[],
+): Promise<Array<{ conversationId: string; memberIds: string[]; message: Message }>> {
+  await requireMember(sourceConversationId, userId);
+
+  const rows = await db
+    .select(messageSelect)
+    .from(messages)
+    .innerJoin(users, eq(users.id, messages.senderId))
+    .where(and(eq(messages.id, messageId), eq(messages.conversationId, sourceConversationId)))
+    .limit(1);
+
+  const src = rows[0];
+  if (!src || src.deletedAt !== null) throw new AppError(ErrorCode.MESSAGE_NOT_FOUND);
+
+  const out: Array<{ conversationId: string; memberIds: string[]; message: Message }> = [];
+
+  for (const targetId of targetConversationIds) {
+    // 每个目标会话都要校验成员身份，防止越权转发
+    try {
+      await requireMember(targetId, userId);
+    } catch {
+      continue;
+    }
+
+    // 转发保留原始类型与文本；附件不重复绑定，避免触发归属校验
+    const sent = await sendMessage(targetId, userId, {
+      type: src.type as MessageType,
+      text: src.text ?? '',
+      clientId: `fwd-${messageId}-${targetId}-${Date.now()}`.slice(0, 40),
+    });
+
+    out.push({
+      conversationId: targetId,
+      memberIds: sent.memberIds,
+      message: sent.message,
+    });
+  }
+
+  return out;
+}
 
 export async function conversationSummaryFor(
   conversationId: string,

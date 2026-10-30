@@ -26,7 +26,15 @@ export interface Route {
     | 'call'
     | 'invite'
     | 'profile'
-    | 'new-chat';
+    | 'new-chat'
+    /** 通讯录 */
+    | 'contacts'
+    /** 新的朋友（好友请求） */
+    | 'friend-requests'
+    /** 他人资料页 */
+    | 'user-profile'
+    /** 群信息 / 成员管理 */
+    | 'group-info';
   params?: Record<string, unknown>;
 }
 

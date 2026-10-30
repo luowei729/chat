@@ -18,7 +18,11 @@ import { AppError } from '../../lib/app-error.js';
 import { ok } from '../../lib/http.js';
 import { generalLimiter } from '../../lib/rate-limit.js';
 import * as service from './service.js';
-import { broadcastMessageDeleted, broadcastNewMessage } from '../../ws/gateway.js';
+import {
+  broadcastMessageDeleted,
+  broadcastNewMessage,
+  notifyReactionUpdated,
+} from '../../ws/gateway.js';
 
 export default async function messageRoutes(app: FastifyInstance): Promise<void> {
   /* ---------------- 拉取历史 ---------------- */
@@ -103,6 +107,102 @@ export default async function messageRoutes(app: FastifyInstance): Promise<void>
       });
 
       return ok(reply, { success: true, seq: result.seq });
+    },
+  );
+
+  /* ---------------- 表情回应 ---------------- */
+  app.post<{ Params: { id: string } }>(
+    '/messages/:id/reactions',
+    { preHandler: [app.requireAuth] },
+    async (req, reply) => {
+      const body = req.body as { conversationId?: string; emoji?: string } | undefined;
+      if (!body?.conversationId || !body.emoji) {
+        throw new AppError(ErrorCode.BAD_REQUEST, '缺少 conversationId 或 emoji');
+      }
+
+      const result = await service.addReaction(
+        body.conversationId,
+        req.params.id,
+        req.userId,
+        body.emoji,
+      );
+
+      notifyReactionUpdated({
+        conversationId: body.conversationId,
+        memberIds: result.memberIds,
+        actorId: req.userId,
+        messageId: req.params.id,
+        emoji: body.emoji,
+        added: true,
+      });
+
+      return ok(reply, { success: true, reactions: result.reactions });
+    },
+  );
+
+  app.delete<{ Params: { id: string; emoji: string } }>(
+    '/messages/:id/reactions/:emoji',
+    { preHandler: [app.requireAuth] },
+    async (req, reply) => {
+      const body = req.body as { conversationId?: string } | undefined;
+      if (!body?.conversationId) {
+        throw new AppError(ErrorCode.BAD_REQUEST, '缺少 conversationId');
+      }
+
+      const emoji = decodeURIComponent(req.params.emoji);
+      const result = await service.removeReaction(
+        body.conversationId,
+        req.params.id,
+        req.userId,
+        emoji,
+      );
+
+      notifyReactionUpdated({
+        conversationId: body.conversationId,
+        memberIds: result.memberIds,
+        actorId: req.userId,
+        messageId: req.params.id,
+        emoji,
+        added: false,
+      });
+
+      return ok(reply, { success: true, reactions: result.reactions });
+    },
+  );
+
+  /* ---------------- 转发消息 ---------------- */
+  app.post<{ Params: { id: string } }>(
+    '/messages/:id/forward',
+    { preHandler: [app.requireAuth] },
+    async (req, reply) => {
+      const body = req.body as
+        | { sourceConversationId?: string; targetConversationIds?: string[] }
+        | undefined;
+
+      if (!body?.sourceConversationId || !Array.isArray(body.targetConversationIds)) {
+        throw new AppError(ErrorCode.BAD_REQUEST, '缺少 sourceConversationId 或 targetConversationIds');
+      }
+      if (body.targetConversationIds.length === 0 || body.targetConversationIds.length > 10) {
+        throw new AppError(ErrorCode.BAD_REQUEST, '一次最多转发到 10 个会话');
+      }
+
+      const results = await service.forwardMessage(
+        body.sourceConversationId,
+        req.params.id,
+        req.userId,
+        body.targetConversationIds,
+      );
+
+      // 逐个会话推送新消息
+      for (const r of results) {
+        broadcastNewMessage({
+          conversationId: r.conversationId,
+          memberIds: r.memberIds,
+          message: r.message,
+        });
+      }
+
+      return ok(reply, { forwarded: results.length });
     },
   );
 }

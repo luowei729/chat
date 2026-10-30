@@ -444,8 +444,8 @@ class MainActivity : AppCompatActivity() {
             override fun loadTemplate(uri: String, callback: Callback) {
                 Thread {
                     try {
-                        val bytes = assets.open(uri).use { it.readBytes() }
-                        log("✓ bundle 读取成功: ${bytes.size} 字节")
+                        val bytes = readBundle(uri)
+                        log("✓ bundle 读取成功: ${bytes.size} 字节 (${bundleSource})")
                         callback.onSuccess(bytes)
                     } catch (e: IOException) {
                         log("✗ bundle 读取失败: ${e.message}")
@@ -499,6 +499,43 @@ class MainActivity : AppCompatActivity() {
         })
 
         return view
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Bundle 读取（支持开发期热替换）                                       */
+    /* ------------------------------------------------------------------ */
+
+    /** 本次 bundle 的来源，仅用于日志 */
+    private var bundleSource = "assets"
+
+    /**
+     * 读取 Lynx bundle
+     * ============================================================
+     * debug 构建下优先读外部文件：
+     *   /sdcard/Android/data/<包名>/files/chat.lynx.bundle
+     *
+     * 这样改前端代码后只需：
+     *   adb push dist/chat.lynx.bundle <该路径> && 重启 App
+     * 无需重新 gradle 构建 + 安装 APK（从 ~90 秒降到 ~5 秒）。
+     *
+     * release 构建永远只读 assets，热替换能力不会带入正式包。
+     * 外部文件不存在或读取失败时自动回退到 assets。
+     */
+    private fun readBundle(uri: String): ByteArray {
+        if (BuildConfig.DEBUG) {
+            val external = getExternalFilesDir(null)?.resolve(uri)
+            if (external != null && external.exists() && external.length() > 0) {
+                try {
+                    val bytes = external.readBytes()
+                    bundleSource = "外部文件 ${external.absolutePath}"
+                    return bytes
+                } catch (e: Throwable) {
+                    log("外部 bundle 读取失败，回退 assets: ${e.message}")
+                }
+            }
+        }
+        bundleSource = "assets"
+        return assets.open(uri).use { it.readBytes() }
     }
 
     /* ------------------------------------------------------------------ */

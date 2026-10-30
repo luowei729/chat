@@ -52,9 +52,9 @@ export function ConversationsPage() {
         <view style={{ flex: 1, display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
           <view
             style={{
-              width: 32,
-              height: 32,
-              borderRadius: 10,
+              width: '32px',
+              height: '32px',
+              borderRadius: '10px',
               backgroundColor: colors.primary,
               display: 'flex',
               alignItems: 'center',
@@ -100,7 +100,7 @@ export function ConversationsPage() {
       </view>
 
       {/* 会话列表 */}
-      <scroll-view scroll-orientation="vertical" style={commonStyles.scroll}>
+      <view style={{ flex: 1, width: '100%', display: 'flex', flexDirection: 'column' }}>
         {!loaded || (loading && list.length === 0) ? (
           <view style={{ padding: spacing.xl, alignItems: 'center' }}>
             <text style={{ color: colors.textMuted, fontSize: fontSize.sm }}>加载中…</text>
@@ -108,28 +108,31 @@ export function ConversationsPage() {
         ) : list.length === 0 ? (
           <view
             style={{
+              width: '100%',
               display: 'flex',
+              flexDirection: 'column',
               alignItems: 'center',
-              paddingTop: 100,
+              paddingTop: '80px',
               paddingLeft: spacing.xxl,
               paddingRight: spacing.xxl,
             }}
           >
             <view
               style={{
-                width: 84,
-                height: 84,
-                borderRadius: 28,
+                width: '84px',
+                height: '84px',
+                borderRadius: '28px',
                 backgroundColor: colors.surfaceAlt,
-                borderWidth: 1,
+                borderWidth: '1px',
                 borderColor: colors.cardBorder,
                 display: 'flex',
+                flexDirection: 'row',
                 alignItems: 'center',
                 justifyContent: 'center',
                 marginBottom: spacing.lg,
               }}
             >
-              <text style={{ fontSize: 36 }}>💬</text>
+              <text style={{ fontSize: '36px' }}>💬</text>
             </view>
             <text style={{ color: colors.text, fontSize: fontSize.md, fontWeight: '600' }}>
               还没有会话
@@ -153,13 +156,13 @@ export function ConversationsPage() {
 
         {/* 底部留白，避免最后一项贴边 */}
         <view style={{ height: spacing.xl }} />
-      </scroll-view>
+      </view>
 
       {/* 刷新按钮（Lynx 各端下拉刷新手势不一致，用按钮兜底） */}
       <view
         style={{
-          height: 40,
-          borderTopWidth: 1,
+          height: '40px',
+          borderTopWidth: '1px',
           borderTopColor: colors.border,
           display: 'flex',
           alignItems: 'center',
@@ -186,7 +189,7 @@ function ConversationItem(props: { conv: ConversationSummary; onTap: () => void 
         flexDirection: 'row',
         alignItems: 'center',
         padding: spacing.md,
-        borderBottomWidth: 1,
+        borderBottomWidth: '1px',
         borderBottomColor: colors.border,
         backgroundColor: conv.pinned ? colors.surfaceAlt : 'transparent',
       }}
@@ -195,8 +198,8 @@ function ConversationItem(props: { conv: ConversationSummary; onTap: () => void 
       {/* 头像：有图显示图，无图显示昵称首字 */}
       <view
         style={{
-          width: 46,
-          height: 46,
+          width: '46px',
+          height: '46px',
           borderRadius: radius.full,
           backgroundColor: colors.primarySoft,
           display: 'flex',
@@ -208,7 +211,7 @@ function ConversationItem(props: { conv: ConversationSummary; onTap: () => void 
         {conv.avatarUrl ? (
           <image
             src={conv.avatarUrl}
-            style={{ width: 46, height: 46, borderRadius: radius.full }}
+            style={{ width: '46px', height: '46px', borderRadius: radius.full }}
           />
         ) : (
           <text style={{ color: colors.primary, fontSize: fontSize.lg, fontWeight: '600' }}>
@@ -224,7 +227,7 @@ function ConversationItem(props: { conv: ConversationSummary; onTap: () => void 
             display: 'flex',
             flexDirection: 'row',
             alignItems: 'center',
-            marginBottom: 4,
+            marginBottom: '4px',
           }}
         >
           <view style={{ flex: 1, marginRight: spacing.sm }}>
@@ -254,18 +257,18 @@ function ConversationItem(props: { conv: ConversationSummary; onTap: () => void 
           {conv.unreadCount > 0 ? (
             <view
               style={{
-                minWidth: 18,
-                height: 18,
+                minWidth: '18px',
+                height: '18px',
                 borderRadius: radius.full,
                 backgroundColor: conv.muted ? colors.textFaint : colors.danger,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                paddingLeft: 5,
-                paddingRight: 5,
+                paddingLeft: '5px',
+                paddingRight: '5px',
               }}
             >
-              <text style={{ color: '#fff', fontSize: 10, fontWeight: '600' }}>
+              <text style={{ color: '#fff', fontSize: '10px', fontWeight: '600' }}>
                 {conv.unreadCount > 99 ? '99+' : String(conv.unreadCount)}
               </text>
             </view>

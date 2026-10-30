@@ -22,6 +22,8 @@ import {
   type ConversationDetail,
   type ConversationMember,
   type ConversationSummary,
+  type GroupMemberItem,
+  type GroupRole,
   type MemberRole,
   type MessagePreview,
 } from '@chat/shared';
@@ -29,6 +31,7 @@ import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { db } from '../../db/index.js';
 import {
   attachments,
+  contactRemarks,
   conversationMembers,
   conversations,
   messages,
@@ -329,11 +332,12 @@ export async function createDirect(
       lastSeq: 0,
       lastMessageAt: null,
       createdAt: now,
+      updatedAt: now,
     });
 
     await tx.insert(conversationMembers).values([
-      { conversationId, userId, role: 'member', lastReadSeq: 0, pinned: false, muted: false, joinedAt: now, leftAt: null },
-      { conversationId, userId: peerId, role: 'member', lastReadSeq: 0, pinned: false, muted: false, joinedAt: now, leftAt: null },
+      { conversationId, userId, role: 'member', lastReadSeq: 0, pinned: false, muted: false, joinedAt: now, updatedAt: now, leftAt: null },
+      { conversationId, userId: peerId, role: 'member', lastReadSeq: 0, pinned: false, muted: false, joinedAt: now, updatedAt: now, leftAt: null },
     ]);
   });
 
@@ -381,6 +385,7 @@ export async function createGroup(
       lastSeq: 0,
       lastMessageAt: null,
       createdAt: now,
+      updatedAt: now,
     });
 
     await tx.insert(conversationMembers).values([
@@ -392,6 +397,7 @@ export async function createGroup(
         pinned: false,
         muted: false,
         joinedAt: now,
+        updatedAt: now,
         leftAt: null,
       },
       ...uniqueMembers.map((id) => ({
@@ -402,6 +408,7 @@ export async function createGroup(
         pinned: false,
         muted: false,
         joinedAt: now,
+        updatedAt: now,
         leftAt: null,
       })),
     ]);
@@ -449,7 +456,7 @@ export async function updateMember(
     // 软删除：保留历史消息，但不再接收新消息
     await db
       .update(conversationMembers)
-      .set({ leftAt: Date.now() })
+      .set({ leftAt: Date.now(), updatedAt: Date.now() })
       .where(
         and(
           eq(conversationMembers.conversationId, conversationId),
@@ -461,7 +468,7 @@ export async function updateMember(
 
   await db
     .update(conversationMembers)
-    .set({ role: action === 'promote' ? 'admin' : 'member' })
+    .set({ role: action === 'promote' ? 'admin' : 'member', updatedAt: Date.now() })
     .where(
       and(
         eq(conversationMembers.conversationId, conversationId),
@@ -473,6 +480,223 @@ export async function updateMember(
 /* ------------------------------------------------------------------ */
 /* 已读水位与个人设置                                                    */
 /* ------------------------------------------------------------------ */
+
+/* ------------------------------------------------------------------ */
+/* 群成员管理（扩展）                                                    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 群成员列表
+ * join 出用户信息与我的备注名，一次查询返回全部展示字段。
+ */
+export async function listGroupMembers(
+  conversationId: string,
+  operatorId: string,
+): Promise<GroupMemberItem[]> {
+  await requireMember(conversationId, operatorId);
+
+  const rows = await db
+    .select({
+      userId: users.id,
+      email: users.email,
+      nickname: users.nickname,
+      avatarUrl: users.avatarUrl,
+      lastSeenAt: users.lastSeenAt,
+      role: conversationMembers.role,
+      remark: contactRemarks.remark,
+    })
+    .from(conversationMembers)
+    .innerJoin(users, eq(users.id, conversationMembers.userId))
+    .leftJoin(
+      contactRemarks,
+      and(
+        eq(contactRemarks.ownerId, operatorId),
+        eq(contactRemarks.targetId, conversationMembers.userId),
+      ),
+    )
+    .where(
+      and(
+        eq(conversationMembers.conversationId, conversationId),
+        isNull(conversationMembers.leftAt),
+      ),
+    );
+
+  return rows.map((r) => ({
+    userId: r.userId,
+    email: maskEmail(r.email),
+    nickname: r.nickname,
+    avatarUrl: r.avatarUrl,
+    remark: r.remark ?? null,
+    displayName: r.remark?.trim() ? r.remark : r.nickname,
+    role: r.role as GroupRole,
+    lastSeenAt: r.lastSeenAt,
+  }));
+}
+
+/**
+ * 邀请成员入群
+ * 权限：群主、管理员、普通成员都可邀请（与 Telegram 一致）。
+ * 已在群内的人会被跳过而不是报错，避免批量邀请时整批失败。
+ */
+export async function inviteMembers(
+  conversationId: string,
+  operatorId: string,
+  userIds: string[],
+): Promise<{ added: string[]; skipped: string[] }> {
+  await requireMember(conversationId, operatorId);
+
+  const [conv] = await db
+    .select({ type: conversations.type })
+    .from(conversations)
+    .where(eq(conversations.id, conversationId))
+    .limit(1);
+  if (!conv) throw new AppError(ErrorCode.CONVERSATION_NOT_FOUND);
+  if (conv.type !== 'group') throw new AppError(ErrorCode.BAD_REQUEST, '私聊不支持邀请成员');
+
+  const current = await db
+    .select({ userId: conversationMembers.userId, leftAt: conversationMembers.leftAt })
+    .from(conversationMembers)
+    .where(eq(conversationMembers.conversationId, conversationId));
+
+  const active = new Set(current.filter((m) => m.leftAt === null).map((m) => m.userId));
+  const left = new Set(current.filter((m) => m.leftAt !== null).map((m) => m.userId));
+
+  if (active.size + userIds.length > GROUP_MAX_MEMBERS) {
+    throw new AppError(ErrorCode.GROUP_MEMBER_LIMIT_REACHED);
+  }
+
+  const now = Date.now();
+  const added: string[] = [];
+  const skipped: string[] = [];
+
+  for (const uid of userIds) {
+    if (active.has(uid)) {
+      skipped.push(uid);
+      continue;
+    }
+    if (left.has(uid)) {
+      // 曾经的成员：恢复而不是重建，保留已读水位
+      await db
+        .update(conversationMembers)
+        .set({ leftAt: null, joinedAt: now, updatedAt: now })
+        .where(
+          and(
+            eq(conversationMembers.conversationId, conversationId),
+            eq(conversationMembers.userId, uid),
+          ),
+        );
+    } else {
+      await db.insert(conversationMembers).values({
+        conversationId,
+        userId: uid,
+        role: 'member',
+        lastReadSeq: 0,
+        pinned: false,
+        muted: false,
+        joinedAt: now,
+        updatedAt: now,
+      });
+    }
+    added.push(uid);
+  }
+
+  return { added, skipped };
+}
+
+/** 退群：群主必须先转让 */
+export async function leaveGroup(conversationId: string, userId: string): Promise<void> {
+  const { role } = await requireMember(conversationId, userId);
+
+  if (role === 'owner') throw new AppError(ErrorCode.GROUP_OWNER_CANNOT_LEAVE);
+
+  await db
+    .update(conversationMembers)
+    .set({ leftAt: Date.now(), updatedAt: Date.now() })
+    .where(
+      and(
+        eq(conversationMembers.conversationId, conversationId),
+        eq(conversationMembers.userId, userId),
+      ),
+    );
+}
+
+/** 转让群主：原群主自动降为管理员 */
+export async function transferOwner(
+  conversationId: string,
+  operatorId: string,
+  targetUserId: string,
+): Promise<void> {
+  const { role } = await requireMember(conversationId, operatorId);
+  if (role !== 'owner') throw new AppError(ErrorCode.NOT_GROUP_OWNER);
+  if (targetUserId === operatorId) throw new AppError(ErrorCode.GROUP_OPERATION_ON_SELF);
+
+  await requireMember(conversationId, targetUserId);
+
+  await db.transaction(async (tx) => {
+    await tx
+      .update(conversations)
+      .set({ ownerId: targetUserId })
+      .where(eq(conversations.id, conversationId));
+
+    await tx
+      .update(conversationMembers)
+      .set({ role: 'owner', updatedAt: Date.now() })
+      .where(
+        and(
+          eq(conversationMembers.conversationId, conversationId),
+          eq(conversationMembers.userId, targetUserId),
+        ),
+      );
+
+    await tx
+      .update(conversationMembers)
+      .set({ role: 'admin', updatedAt: Date.now() })
+      .where(
+        and(
+          eq(conversationMembers.conversationId, conversationId),
+          eq(conversationMembers.userId, operatorId),
+        ),
+      );
+  });
+}
+
+/** 修改群资料（群名 / 头像） */
+export async function updateGroupInfo(
+  conversationId: string,
+  operatorId: string,
+  patch: { title?: string; avatarUrl?: string | null },
+): Promise<void> {
+  const { role } = await requireMember(conversationId, operatorId);
+
+  const [conv] = await db
+    .select({ type: conversations.type })
+    .from(conversations)
+    .where(eq(conversations.id, conversationId))
+    .limit(1);
+  if (!conv) throw new AppError(ErrorCode.CONVERSATION_NOT_FOUND);
+  if (conv.type !== 'group') throw new AppError(ErrorCode.BAD_REQUEST, '私聊不支持修改群资料');
+
+  // 群主和 admin 都能改
+  if (role !== 'owner' && role !== 'admin') throw new AppError(ErrorCode.GROUP_PERMISSION_DENIED);
+
+  const set: { title?: string; avatarUrl?: string | null } = {};
+  if (typeof patch.title === 'string') set.title = patch.title.trim().slice(0, 64);
+  if (patch.avatarUrl !== undefined) set.avatarUrl = patch.avatarUrl;
+
+  if (Object.keys(set).length === 0) return;
+
+  await db.update(conversations).set(set).where(eq(conversations.id, conversationId));
+}
+
+/** 邮箱脱敏：与 friend 模块保持一致 */
+function maskEmail(email: string): string {
+  const at = email.indexOf('@');
+  if (at <= 0) return '***';
+  const name = email.slice(0, at);
+  const domain = email.slice(at);
+  if (name.length <= 2) return `${name[0] ?? '*'}***${domain}`;
+  return `${name.slice(0, 2)}***${domain}`;
+}
 
 export async function markRead(conversationId: string, userId: string, seq: number): Promise<number> {
   await requireMember(conversationId, userId);

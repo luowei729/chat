@@ -68,6 +68,38 @@ export const ErrorCode = {
   MESSAGE_DELETE_FORBIDDEN: 14004,
   /** 引用回复的目标消息不存在或不在同一会话 */
   REPLY_TARGET_INVALID: 14005,
+  /** 回应目标消息不存在 */
+  REACTION_TARGET_INVALID: 14006,
+
+  /* ---------- 好友 18xxx ---------- */
+  /** 不能加自己为好友 */
+  FRIEND_SELF: 18001,
+  /** 已经是好友 */
+  FRIEND_ALREADY: 18002,
+  /** 对方已向你发出请求，请直接接受 */
+  FRIEND_REQUEST_PENDING_INCOMING: 18003,
+  /** 已发出请求，等待对方处理 */
+  FRIEND_REQUEST_PENDING_OUTGOING: 18004,
+  /** 好友请求不存在 */
+  FRIEND_REQUEST_NOT_FOUND: 18005,
+  /** 不是好友关系 */
+  FRIEND_NOT_FOUND: 18006,
+  /** 已被对方拉黑 */
+  FRIEND_BLOCKED_BY_PEER: 18007,
+  /** 你已拉黑对方，需先解除 */
+  FRIEND_BLOCKED_BY_SELF: 18008,
+
+  /* ---------- 群组管理 19xxx ---------- */
+  /** 权限不足（需要管理员或群主） */
+  GROUP_PERMISSION_DENIED: 19001,
+  /** 群主不能退群，需先转让 */
+  GROUP_OWNER_CANNOT_LEAVE: 19002,
+  /** 目标用户已在群内 */
+  GROUP_MEMBER_EXISTS: 19003,
+  /** 群成员已达上限 */
+  GROUP_MEMBER_LIMIT_REACHED: 19004,
+  /** 不能对自己执行该操作 */
+  GROUP_OPERATION_ON_SELF: 19005,
 
   /* ---------- 上传 15xxx ---------- */
   FILE_TOO_LARGE: 15001,
@@ -76,6 +108,8 @@ export const ErrorCode = {
   /** 附件已被其他消息引用，禁止重复绑定 */
   ATTACHMENT_ALREADY_BOUND: 15004,
   UPLOAD_INCOMPLETE: 15005,
+  /** 文件超过保留期（聊天文件仅存 30 天），服务器已删除文件本体 */
+  ATTACHMENT_EXPIRED: 15006,
 
   /* ---------- 通话 16xxx ---------- */
   CALL_NOT_FOUND: 16001,
@@ -138,12 +172,29 @@ export const ErrorMessage: Record<number, string> = {
   [ErrorCode.MESSAGE_EMPTY]: '消息内容不能为空',
   [ErrorCode.MESSAGE_DELETE_FORBIDDEN]: '只能删除自己发送的消息',
   [ErrorCode.REPLY_TARGET_INVALID]: '引用的消息不存在',
+  [ErrorCode.REACTION_TARGET_INVALID]: '回应的消息不存在',
+
+  [ErrorCode.FRIEND_SELF]: '不能添加自己为好友',
+  [ErrorCode.FRIEND_ALREADY]: '你们已经是好友了',
+  [ErrorCode.FRIEND_REQUEST_PENDING_INCOMING]: '对方已向你发送好友请求，请去「新的朋友」处理',
+  [ErrorCode.FRIEND_REQUEST_PENDING_OUTGOING]: '好友请求已发送，请等待对方确认',
+  [ErrorCode.FRIEND_REQUEST_NOT_FOUND]: '好友请求不存在或已处理',
+  [ErrorCode.FRIEND_NOT_FOUND]: '你们还不是好友',
+  [ErrorCode.FRIEND_BLOCKED_BY_PEER]: '无法完成操作',
+  [ErrorCode.FRIEND_BLOCKED_BY_SELF]: '你已拉黑对方，请先解除拉黑',
+
+  [ErrorCode.GROUP_PERMISSION_DENIED]: '权限不足，仅群主或管理员可操作',
+  [ErrorCode.GROUP_OWNER_CANNOT_LEAVE]: '群主不能直接退群，请先转让群主',
+  [ErrorCode.GROUP_MEMBER_EXISTS]: '对方已在群里',
+  [ErrorCode.GROUP_MEMBER_LIMIT_REACHED]: '群成员已达上限',
+  [ErrorCode.GROUP_OPERATION_ON_SELF]: '不能对自己执行该操作',
 
   [ErrorCode.FILE_TOO_LARGE]: '文件超过大小限制',
   [ErrorCode.FILE_TYPE_NOT_ALLOWED]: '不支持该文件类型',
   [ErrorCode.ATTACHMENT_NOT_FOUND]: '附件不存在',
   [ErrorCode.ATTACHMENT_ALREADY_BOUND]: '附件已被使用',
   [ErrorCode.UPLOAD_INCOMPLETE]: '文件上传不完整',
+  [ErrorCode.ATTACHMENT_EXPIRED]: '文件已过期（聊天文件仅保留 30 天）',
 
   [ErrorCode.CALL_NOT_FOUND]: '通话不存在',
   [ErrorCode.CALL_ALREADY_ENDED]: '通话已结束',
@@ -209,6 +260,22 @@ const HTTP_STATUS_MAP: Record<number, number> = {
   [ErrorCode.MESSAGE_EMPTY]: 400,
   [ErrorCode.MESSAGE_DELETE_FORBIDDEN]: 403,
   [ErrorCode.REPLY_TARGET_INVALID]: 400,
+  [ErrorCode.REACTION_TARGET_INVALID]: 404,
+
+  [ErrorCode.FRIEND_SELF]: 400,
+  [ErrorCode.FRIEND_ALREADY]: 409,
+  [ErrorCode.FRIEND_REQUEST_PENDING_INCOMING]: 409,
+  [ErrorCode.FRIEND_REQUEST_PENDING_OUTGOING]: 409,
+  [ErrorCode.FRIEND_REQUEST_NOT_FOUND]: 404,
+  [ErrorCode.FRIEND_NOT_FOUND]: 404,
+  [ErrorCode.FRIEND_BLOCKED_BY_PEER]: 403,
+  [ErrorCode.FRIEND_BLOCKED_BY_SELF]: 403,
+
+  [ErrorCode.GROUP_PERMISSION_DENIED]: 403,
+  [ErrorCode.GROUP_OWNER_CANNOT_LEAVE]: 400,
+  [ErrorCode.GROUP_MEMBER_EXISTS]: 409,
+  [ErrorCode.GROUP_MEMBER_LIMIT_REACHED]: 400,
+  [ErrorCode.GROUP_OPERATION_ON_SELF]: 400,
 
   /* 上传 */
   [ErrorCode.FILE_TOO_LARGE]: 413,
@@ -216,6 +283,7 @@ const HTTP_STATUS_MAP: Record<number, number> = {
   [ErrorCode.ATTACHMENT_NOT_FOUND]: 404,
   [ErrorCode.ATTACHMENT_ALREADY_BOUND]: 409,
   [ErrorCode.UPLOAD_INCOMPLETE]: 400,
+  [ErrorCode.ATTACHMENT_EXPIRED]: 410,
 
   /* 通话 */
   [ErrorCode.CALL_NOT_FOUND]: 404,

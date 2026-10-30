@@ -99,7 +99,7 @@ export function ResetPasswordPage() {
         <view style={commonStyles.headerSide} />
       </view>
 
-      <scroll-view scroll-orientation="vertical" style={commonStyles.scroll}>
+      <view style={{ flex: 1, width: '100%', display: 'flex', flexDirection: 'column' }}>
         <view style={{ padding: spacing.xl, paddingBottom: spacing.xxxl }}>
         {success ? (
           <view style={{ alignItems: 'center', paddingTop: spacing.xxl }}>
@@ -137,11 +137,11 @@ export function ResetPasswordPage() {
               </view>
               <view
                 style={{
-                  width: 110,
-                  height: 50,
+                  width: '110px',
+                  height: '50px',
                   borderRadius: radius.md,
                   backgroundColor: countdown > 0 ? colors.surfaceAlt : colors.primarySoft,
-                  borderWidth: 1,
+                  borderWidth: '1px',
                   borderColor: countdown > 0 ? colors.border : colors.primary,
                   display: 'flex',
                   alignItems: 'center',
@@ -169,7 +169,7 @@ export function ResetPasswordPage() {
               bindinput={(e: { detail: { value: string } }) => setNewPassword(e.detail.value)}
             />
 
-            <view style={{ height: 22, justifyContent: 'center', marginTop: spacing.xs }}>
+            <view style={{ height: '22px', justifyContent: 'center', marginTop: spacing.xs }}>
               {error ? (
                 <text style={{ color: colors.danger, fontSize: fontSize.sm }}>{error}</text>
               ) : null}
@@ -189,7 +189,7 @@ export function ResetPasswordPage() {
                 color: colors.textFaint,
                 fontSize: fontSize.xs,
                 marginTop: spacing.md,
-                lineHeight: 1.6,
+                lineHeight: '1.6px',
               }}
             >
               重置成功后，所有设备上的登录状态都会失效，需要重新登录。
@@ -197,7 +197,7 @@ export function ResetPasswordPage() {
           </>
         )}
         </view>
-      </scroll-view>
+      </view>
     </view>
   );
 }

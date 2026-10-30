@@ -147,8 +147,8 @@ export function NewChatPage() {
           </view>
           <view
             style={{
-              width: 72,
-              height: 50,
+              width: '72px',
+              height: '50px',
               borderRadius: radius.md,
               backgroundColor: colors.primary,
               display: 'flex',
@@ -181,7 +181,7 @@ export function NewChatPage() {
       </view>
 
       {/* 搜索结果 */}
-      <scroll-view scroll-orientation="vertical" style={commonStyles.scroll}>
+      <view style={{ flex: 1, width: '100%', display: 'flex', flexDirection: 'column' }}>
         {results.map((user) => (
           <view
             key={user.id}
@@ -190,7 +190,7 @@ export function NewChatPage() {
               flexDirection: 'row',
               alignItems: 'center',
               padding: spacing.md,
-              borderBottomWidth: 1,
+              borderBottomWidth: '1px',
               borderBottomColor: colors.border,
               backgroundColor: selected.has(user.id) ? colors.primarySoft : 'transparent',
             }}
@@ -199,8 +199,8 @@ export function NewChatPage() {
             {/* 头像 */}
             <view
               style={{
-                width: 42,
-                height: 42,
+                width: '42px',
+                height: '42px',
                 borderRadius: radius.full,
                 backgroundColor: colors.primarySoft,
                 display: 'flex',
@@ -227,8 +227,8 @@ export function NewChatPage() {
             {groupMode ? (
               <view
                 style={{
-                  width: 22,
-                  height: 22,
+                  width: '22px',
+                  height: '22px',
                   borderRadius: radius.full,
                   backgroundColor: selected.has(user.id) ? colors.primary : 'transparent',
                   borderWidth: selected.has(user.id) ? 0 : 1,
@@ -239,13 +239,13 @@ export function NewChatPage() {
                 }}
               >
                 {selected.has(user.id) ? (
-                  <text style={{ color: '#fff', fontSize: 12 }}>✓</text>
+                  <text style={{ color: '#fff', fontSize: '12px' }}>✓</text>
                 ) : null}
               </view>
             ) : null}
           </view>
         ))}
-      </scroll-view>
+      </view>
     </view>
   );
 }

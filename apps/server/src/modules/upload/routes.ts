@@ -91,6 +91,23 @@ export default async function uploadRoutes(app: FastifyInstance): Promise<void> 
       const media = await uploadService.findAttachment(req.params.id);
 
       /**
+       * 过期文件：返回 410 Gone。
+       * 用 410 而不是 404，是为了让客户端能区分
+       * 「文件超过保留期被清理」与「链接写错了」，
+       * 前者应显示「文件已过期」提示，后者才是异常。
+       */
+      if (media.expired) {
+        return reply
+          .status(410)
+          .header('Cache-Control', 'no-store')
+          .send({
+            code: 15006,
+            message: '文件已过期（聊天文件仅保留 30 天）',
+            serverTime: Date.now(),
+          });
+      }
+
+      /**
        * X-Accel-Redirect：让 OpenResty 直接发送文件。
        * 对应 nginx 配置里的 location /_internal_media/ { internal; alias ... }
        * 注意：这个 location 是 internal 的，外部无法直接访问，

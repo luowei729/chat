@@ -17,21 +17,21 @@
 export function TestApp() {
   return (
     <view style={{ display: 'flex', flexDirection: 'column', flex: 1, backgroundColor: '#070B14' }}>
-      <view style={{ height: 120, backgroundColor: '#D32F2F', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <text style={{ color: '#FFFFFF', fontSize: 26, fontWeight: '700' }}>1 FIXED-120</text>
+      <view style={{ height: '120px', backgroundColor: '#D32F2F', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <text style={{ color: '#FFFFFF', fontSize: '26px', fontWeight: '700' }}>1 FIXED-120</text>
       </view>
 
       <view style={{ flex: 1, backgroundColor: '#2E7D32', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <text style={{ color: '#FFFFFF', fontSize: 26, fontWeight: '700' }}>2 FLEX-1</text>
+        <text style={{ color: '#FFFFFF', fontSize: '26px', fontWeight: '700' }}>2 FLEX-1</text>
       </view>
 
       <view style={{ height: '100%', backgroundColor: '#F9A825', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <text style={{ color: '#000000', fontSize: 26, fontWeight: '700' }}>3 PERCENT-100</text>
+        <text style={{ color: '#000000', fontSize: '26px', fontWeight: '700' }}>3 PERCENT-100</text>
       </view>
 
-      <view style={{ backgroundColor: '#6A1B9A', paddingTop: 20, paddingBottom: 20, display: 'flex', alignItems: 'center' }}>
-        <text style={{ color: '#FFFFFF', fontSize: 26, fontWeight: '700' }}>4 AUTO</text>
-        <text style={{ color: '#E0E0E0', fontSize: 13, marginTop: 6 }}>中文测试 · Lynx</text>
+      <view style={{ backgroundColor: '#6A1B9A', paddingTop: '20px', paddingBottom: '20px', display: 'flex', alignItems: 'center' }}>
+        <text style={{ color: '#FFFFFF', fontSize: '26px', fontWeight: '700' }}>4 AUTO</text>
+        <text style={{ color: '#E0E0E0', fontSize: '13px', marginTop: '6px' }}>中文测试 · Lynx</text>
       </view>
     </view>
   );

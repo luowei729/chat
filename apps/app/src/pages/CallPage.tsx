@@ -196,14 +196,14 @@ export function CallPage(props: {
       }}
     >
       {/* 顶部：通话对象与状态（全部居中，用 margin 代替 gap） */}
-      <view style={{ alignItems: 'center', paddingTop: 80 }}>
+      <view style={{ alignItems: 'center', paddingTop: '80px' }}>
         <view
           style={{
-            width: 96,
-            height: 96,
+            width: '96px',
+            height: '96px',
             borderRadius: radius.full,
             backgroundColor: colors.primarySoft,
-            borderWidth: 2,
+            borderWidth: '2px',
             borderColor: colors.cardBorder,
             display: 'flex',
             alignItems: 'center',
@@ -211,7 +211,7 @@ export function CallPage(props: {
             marginBottom: spacing.lg,
           }}
         >
-          <text style={{ color: colors.primary, fontSize: 36, fontWeight: '600' }}>
+          <text style={{ color: colors.primary, fontSize: '36px', fontWeight: '600' }}>
             {(callerName ?? '通').slice(0, 1)}
           </text>
         </view>
@@ -276,7 +276,7 @@ export function CallPage(props: {
       {/* 底部：操作按钮（用 margin 分隔，不用 gap） */}
       <view
         style={{
-          paddingBottom: 60,
+          paddingBottom: '60px',
           display: 'flex',
           flexDirection: 'row',
           justifyContent: 'center',
@@ -321,16 +321,16 @@ function ParticipantTile(props: {
   return (
     <view
       style={{
-        width: 88,
-        height: 112,
+        width: '88px',
+        height: '112px',
         alignItems: 'center',
         margin: spacing.sm,
       }}
     >
       <view
         style={{
-          width: 72,
-          height: 72,
+          width: '72px',
+          height: '72px',
           borderRadius: radius.full,
           backgroundColor: speaking ? colors.primarySoft : colors.surfaceAlt,
           // 说话时用主色描边，是语音通话最重要的反馈
@@ -347,7 +347,7 @@ function ParticipantTile(props: {
       </view>
 
       <text
-        style={{ color: colors.textMuted, fontSize: fontSize.xs, marginTop: 6, textAlign: 'center' }}
+        style={{ color: colors.textMuted, fontSize: fontSize.xs, marginTop: '6px', textAlign: 'center' }}
         text-maxline="1"
       >
         {name}
@@ -355,7 +355,7 @@ function ParticipantTile(props: {
       </text>
 
       {connectionState && connectionState !== 'connected' ? (
-        <text style={{ color: colors.textFaint, fontSize: 10, marginTop: 2 }}>
+        <text style={{ color: colors.textFaint, fontSize: '10px', marginTop: '2px' }}>
           {connectionState === 'connecting' ? '连接中' : '重连中'}
         </text>
       ) : null}
@@ -376,11 +376,11 @@ function CircleButton(props: {
     <view style={{ alignItems: 'center', marginLeft: spacing.lg, marginRight: spacing.lg }}>
       <view
         style={{
-          width: 64,
-          height: 64,
+          width: '64px',
+          height: '64px',
           borderRadius: radius.full,
           backgroundColor: color,
-          borderWidth: 1,
+          borderWidth: '1px',
           borderColor: colors.cardBorder,
           display: 'flex',
           alignItems: 'center',
@@ -389,7 +389,7 @@ function CircleButton(props: {
         }}
         bindtap={onTap}
       >
-        <text style={{ color: '#fff', fontSize: 22 }}>{icon}</text>
+        <text style={{ color: '#fff', fontSize: '22px' }}>{icon}</text>
       </view>
       <text style={{ color: colors.textMuted, fontSize: fontSize.xs }}>{label}</text>
     </view>

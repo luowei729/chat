@@ -350,6 +350,18 @@ export async function sendMessage(
       }
     }
 
+    /**
+     * 把发送者自己的已读水位推进到自己刚发的这条。
+     * 未读数算法是 (lastSeq - lastReadSeq)，
+     * 若不推进，自己发的消息也会被算成「未读」，
+     * 会话列表会一直显示红点（自己发的消息永远是已读的）。
+     * 这次更新走主键 (conversation_id, user_id)，成本可忽略。
+     */
+    await conn.execute(
+      'UPDATE conversation_members SET last_read_seq = ?, updated_at = ? WHERE conversation_id = ? AND user_id = ? AND last_read_seq < ?',
+      [seq, now, conversationId, senderId, seq],
+    );
+
     await conn.commit();
   } catch (e) {
     await conn.rollback();

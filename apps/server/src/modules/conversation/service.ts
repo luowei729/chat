@@ -89,7 +89,19 @@ async function loadMembers(conversationIds: string[]) {
 }
 
 /** 批量取每个会话的最后一条消息摘要 */
-async function loadLastMessages(conversationIds: string[]): Promise<Map<string, MessagePreview>> {
+/**
+ * 批量取每个会话的最后一条消息摘要
+ * ============================================================
+ * 导出给 sync 模块复用：增量同步需要完全相同的摘要口径，
+ * 两份实现容易在「撤回消息算不算最新」「多附件取哪条」上产生分歧。
+ *
+ * 实现用相关子查询（seq = MAX(seq)）而不是 ROW_NUMBER()：
+ * messages(conversation_id, seq) 上有唯一索引，
+ * 子查询能直接走索引定位到单行，比窗口函数扫全分区更省内存。
+ * 已排除撤回消息（deleted_at 非空），客户端不会看到「已撤回」当摘要。
+ * ============================================================
+ */
+export async function loadLastMessages(conversationIds: string[]): Promise<Map<string, MessagePreview>> {
   const result = new Map<string, MessagePreview>();
   if (conversationIds.length === 0) return result;
 

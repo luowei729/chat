@@ -118,7 +118,7 @@ jobs:
           npm install --omit=dev --no-audit --no-fund
 
           # 执行数据库迁移（幂等，重复跑安全）
-          node dist/db/migrate.js || echo "迁移脚本未找到，跳过"
+          node dist/migrate.js || echo "迁移脚本未找到，跳过"
 
           # 重启服务
           systemctl restart chat-server

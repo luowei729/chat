@@ -35,6 +35,14 @@ import {
   messages,
   users,
 } from '../../db/schema.js';
+import { listConversations, loadLastMessages } from '../conversation/service.js';
+
+/**
+ * 首次同步与单次增量返回的会话上限
+ * 说明：本 App 布局不能滚动，会话列表本来就分页展示，
+ * 一次返回上百个对客户端和服务端都是浪费。
+ */
+const MAX_SYNC_CONVERSATIONS = 100;
 
 /**
  * 增量同步：返回自 since 之后变化的会话
@@ -56,6 +64,26 @@ import {
  */
 export async function syncSince(userId: string, since: number): Promise<SyncResult> {
   const serverTime = Date.now();
+
+  /**
+   * 首次同步（since <= 0）：直接全量返回，不走增量逻辑。
+   * ============================================================
+   * 为什么必须单独处理：
+   * 1. 历史数据（增量字段上线前创建的会话）updated_at 是 0，
+   *    而条件是 gt(0, 0) = false，会一条都匹配不到；
+   * 2. 首次本来就要拿全量，走增量反而是绕远路。
+   * 这样客户端无论何时首次调用（含清空缓存后）都能拿到完整列表。
+   */
+  if (since <= 0) {
+    const conversations = await listConversations(userId);
+    return {
+      serverTime,
+      conversations: conversations.slice(0, MAX_SYNC_CONVERSATIONS),
+      removedConversationIds: [],
+      friendsChanged: true,
+      pendingFriendRequests: await countPendingRequests(userId),
+    };
+  }
 
   /**
    * 查询 1：我的成员记录变化（置顶/免打扰/已读/退群）
@@ -227,76 +255,6 @@ export async function syncSince(userId: string, since: number): Promise<SyncResu
 /* ------------------------------------------------------------------ */
 /* 辅助查询                                                             */
 /* ------------------------------------------------------------------ */
-
-/** 批量取每个会话的最后一条消息摘要 */
-async function loadLastMessages(
-  conversationIds: string[],
-): Promise<Map<string, ReturnType<typeof toPreview>>> {
-  const out = new Map<string, ReturnType<typeof toPreview>>();
-  if (conversationIds.length === 0) return out;
-
-  /**
-   * MySQL 8 支持窗口函数，一次查询拿到每个会话的 seq 最大的那条。
-   * 比「先查 lastSeq 再逐会话查消息」少 N 次往返。
-   */
-  const rows = await db
-    .select({
-      conversationId: messages.conversationId,
-      id: messages.id,
-      senderId: messages.senderId,
-      senderName: users.nickname,
-      type: messages.type,
-      text: messages.text,
-      createdAt: messages.createdAt,
-      deletedAt: messages.deletedAt,
-      rn: sql<number>`ROW_NUMBER() OVER (PARTITION BY ${messages.conversationId} ORDER BY ${messages.seq} DESC)`.as(
-        'rn',
-      ),
-    })
-    .from(messages)
-    .innerJoin(users, eq(users.id, messages.senderId))
-    .where(inArray(messages.conversationId, conversationIds))
-    .orderBy(desc(messages.seq))
-    .limit(conversationIds.length * MESSAGE_PAGE_SIZE);
-
-  for (const r of rows) {
-    if (Number(r.rn) !== 1) continue;
-    out.set(
-      r.conversationId,
-      toPreview({
-        id: r.id,
-        senderId: r.senderId,
-        senderName: r.senderName,
-        type: r.type,
-        text: r.text,
-        createdAt: r.createdAt,
-        deletedAt: r.deletedAt,
-      }),
-    );
-  }
-
-  return out;
-}
-
-function toPreview(r: {
-  id: string;
-  senderId: string;
-  senderName: string;
-  type: string;
-  text: string | null;
-  createdAt: number;
-  deletedAt: number | null;
-}) {
-  const deleted = r.deletedAt !== null;
-  return {
-    id: r.id,
-    senderId: r.senderId,
-    senderName: r.senderName,
-    type: (deleted ? 'system' : r.type) as never,
-    summary: deleted ? '消息已撤回' : messageSummary(r.type as never, r.text),
-    createdAt: r.createdAt,
-  };
-}
 
 /** 批量取每个会话的活跃成员数 */
 async function loadMemberCounts(conversationIds: string[]): Promise<Map<string, number>> {

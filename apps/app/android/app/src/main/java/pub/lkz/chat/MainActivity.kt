@@ -505,7 +505,7 @@ class MainActivity : AppCompatActivity() {
                 text = buildString {
                     append("chat 启动失败\n\n")
                     append("${e.javaClass.simpleName}: ${e.message}\n\n")
-                    append(e.stackTraceToString().lineSequence().take(20).joinToString("\n"))
+                    append(e.stackTraceToString().split('\n').take(20).joinToString("\n"))
                 }
                 setTextColor(Color.parseColor("#FF6B6B"))
                 setBackgroundColor(Color.BLACK)

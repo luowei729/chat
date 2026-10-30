@@ -82,7 +82,9 @@ class ChatApplication : Application() {
         val prev = BootLog.readPreviousCrash()
         if (prev != null) {
             BootLog.i("!! 上次启动异常退出，最后记录：")
-            prev.lineSequence().takeLast(12).forEach { BootLog.i("  $it") }
+            // 注意：不要用 lineSequence().takeLast()，
+            // CI 上的 Kotlin 版本对 Sequence.takeLast 解析会报 receiver 不匹配
+            prev.split('\n').takeLast(12).forEach { BootLog.i("  $it") }
         }
 
         // 每一步独立 try/catch，任何一步失败都不影响后续

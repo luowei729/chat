@@ -391,27 +391,52 @@ export async function request<T = unknown>(
  * 此时自动重试一次即可恢复；重试同样的请求是安全的，
  * 因为服务端所有写接口都带幂等键（clientId / 天然幂等）。
  */
+/**
+ * 传输层抖动重试
+ * ------------------------------------------------------------
+ * Lynx 的 HTTP 服务（OkHttp 实现）会合成 499「请求被取消」，
+ * 且在应用冷启动 / 服务端刚重启时**可能连续发生**：
+ * 连接池里的旧连接全部失效，需要几次重试才能建立新连接。
+ *
+ * 之前只重试 1 次，实测不足 —— 用户看到的就是
+ * 「服务器返回格式异常（HTTP 499）」，登录直接失败。
+ *
+ * 现在：最多 3 次，300/600/900ms 退避。
+ * 为什么这样可以放心重试：
+ *   所有写接口都带幂等键（消息 clientId、好友关系主键、
+ *   消息隐藏表主键），重复请求不会产生脏数据。
+ *   纯 GET 天然幂等。
+ * 业务错误（code != 0）不重试，避免掩盖真实问题。
+ */
+const TRANSPORT_RETRIES = 3;
+
 async function rawFetchWithRetry<T>(
   path: string,
   options: RawFetchOptions,
 ): Promise<ApiResponse<T>> {
-  try {
-    const first = await rawFetch<T>(path, options);
-    // 传输出错时 rawFetch 不会走到这里（它会 throw）
-    return first;
-  } catch (e) {
-    if (!(e instanceof ApiError)) throw e;
+  let lastErr: unknown;
 
-    // 只对「传输层疑似被取消」的情况重试，业务错误不重试
-    const msg = e.message ?? '';
-    const isTransportGlitch =
-      msg.includes('499') || msg.includes('响应读取失败') || msg.includes('网络连接失败');
+  for (let attempt = 0; attempt <= TRANSPORT_RETRIES; attempt += 1) {
+    try {
+      return await rawFetch<T>(path, options);
+    } catch (e) {
+      lastErr = e;
+      if (!(e instanceof ApiError)) throw e;
 
-    if (!isTransportGlitch) throw e;
+      const msg = e.message ?? '';
+      const isTransportGlitch =
+        msg.includes('499') ||
+        msg.includes('响应读取失败') ||
+        msg.includes('网络连接失败');
 
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    return rawFetch<T>(path, options);
+      // 业务错误或已是最后一次 → 直接抛出
+      if (!isTransportGlitch || attempt === TRANSPORT_RETRIES) throw e;
+
+      await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
+    }
   }
+
+  throw lastErr;
 }
 
 /** GET 快捷方法 */

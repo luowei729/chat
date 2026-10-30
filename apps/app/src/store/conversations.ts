@@ -194,17 +194,57 @@ export function useMessages(conversationId: string): {
 }
 
 /** 设置某会话的消息列表（首次加载） */
+/**
+ * 用服务端数据初始化消息列表（进入会话时）
+ * ------------------------------------------------------------
+ * 【必须合并本地未完成的消息，不能整体覆盖】
+ * 之前的实现是直接替换整个列表。后果：
+ *   1. 用户上传视频（还没传完，是 localStatus='sending' 的本地占位）；
+ *   2. 切出去再进会话 → 触发这次 setMessages → 占位被服务端列表覆盖掉；
+ *   3. 上传其实还在后台跑，但 UI 里那条消息彻底消失了。
+ * 用户看到的就是「发送没成功，退出再进消息就没了」。
+ *
+ * 正确做法：服务端的消息为准，但把本地「还在发送 / 发送失败」的消息
+ * 追加回列表尾部，让用户能看到进度或重试。
+ * 已经在服务端列表里的（按 clientId / id 匹配）不重复追加。
+ */
 export function setMessages(
   conversationId: string,
   messages: Message[],
   hasMore: boolean,
 ): void {
-  messagesStore.set((prev) => ({
-    ...prev,
-    byConversation: { ...prev.byConversation, [conversationId]: sortMessages(messages) },
-    hasMore: { ...prev.hasMore, [conversationId]: hasMore },
-    loading: { ...prev.loading, [conversationId]: false },
-  }));
+  messagesStore.set((prev) => {
+    const existing = prev.byConversation[conversationId] ?? [];
+
+    // 服务端已确认的 id 与 clientId 集合
+    const serverIds = new Set(existing.map((m) => m.id));
+    const ids = new Set(messages.map((m) => m.id));
+    const clientIds = new Set(
+      messages.map((m) => m.clientId).filter((c): c is string => !!c),
+    );
+
+    // 本地未完成的消息（发送中 / 失败），且服务端还没返回同一条
+    const pending = existing.filter((m) => {
+      const unfinished = m.localStatus === 'sending' || m.localStatus === 'failed';
+      if (!unfinished) return false;
+      if (ids.has(m.id)) return false;
+      if (m.clientId && clientIds.has(m.clientId)) return false;
+      return true;
+    });
+
+    // id 兜底去重，避免极端情况下重复渲染
+    const merged = [...messages];
+    for (const p of pending) {
+      if (!serverIds.has(p.id)) merged.push(p);
+    }
+
+    return {
+      ...prev,
+      byConversation: { ...prev.byConversation, [conversationId]: sortMessages(merged) },
+      hasMore: { ...prev.hasMore, [conversationId]: hasMore },
+      loading: { ...prev.loading, [conversationId]: false },
+    };
+  });
 }
 
 /** 前插历史消息（上拉加载更多） */

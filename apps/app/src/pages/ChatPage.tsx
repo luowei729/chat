@@ -22,6 +22,7 @@ import {
   deleteMessage as deleteMessageApi,
   getConversation,
   hideMessage as hideMessageApi,
+  listConversations,
   listMessages,
   sendMessage,
 } from '../api/index.js';
@@ -36,6 +37,7 @@ import {
   markMessageRecalled,
   prependMessages,
   removeMessage,
+  setConversations,
   setMessageProgress,
   setMessages,
   setMessagesLoading,
@@ -149,6 +151,21 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
       } catch {
         // 标题拿不到就用路由传入的
       }
+
+      /**
+       * 刷新会话列表
+       * ------------------------------------------------------------
+       * 进入聊天时列表可能是陈旧的：
+       *   · 通过「加好友」自动建的会话，自己端没收到 conversation.new
+       *   · createDirect 返回 created:false（会话早已存在）时服务端也不广播
+       * 结果就是「会话存在、能聊天，但列表里看不到」。
+       * 进入聊天页时补一次刷新，任何入口都不会漏。
+       */
+      void listConversations()
+        .then((list) => {
+          if (!cancelled) setConversations(list);
+        })
+        .catch(() => undefined);
 
       // 拉最新一页消息
       setMessagesLoading(conversationId, true);
@@ -1011,6 +1028,91 @@ function ActionRow(props: { label: string; onTap: () => void; danger?: boolean }
 }
 
 /* ------------------------------------------------------------------ */
+/* 文件气泡                                                             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 文件消息卡片
+ * ============================================================
+ * 【为什么必须固定宽度】
+ * 之前只写了 text-maxline="1"，没有约束容器宽度。
+ * Lynx 的 text 在无宽度约束时会按内容自然撑开，
+ * 长文件名直接把气泡顶出屏幕，看起来就是「文件信息超出框了」。
+ *
+ * 这里改成 TG / 微信的文件卡片：
+ *   固定 236px 宽 → 左侧文件图标 → 右侧两行（文件名 + 大小）
+ * 文件名用 text-maxline="1" + 明确宽度才能可靠截断，
+ * 两者缺一不可。
+ *
+ * 点击行为：
+ *   未过期 → 打开查看器（图片/视频可预览，其他提示链接）
+ *   已过期 → 提示保留期，不发起请求
+ */
+function FileBubble(props: { message: Message; isSelf: boolean }) {
+  const { message, isSelf } = props;
+  const att = message.attachments[0];
+
+  const expired = !att?.url;
+  const tone = isSelf ? '#FFFFFF' : colors.text;
+  const subTone = isSelf ? 'rgba(255,255,255,0.72)' : colors.textMuted;
+
+  return (
+    <view
+      style={{
+        width: '236px',
+        display: 'flex',
+        flexDirection: 'row',
+        alignItems: 'center',
+        opacity: expired ? 0.6 : 1,
+      }}
+      bindtap={() => {
+        // 过期文件不发起请求，避免用户看到「无法加载」的困惑
+        if (expired) return;
+        push({
+          name: 'media-viewer',
+          params: { url: att!.url, kind: 'file', filename: att!.filename },
+        });
+      }}
+    >
+      {/* 文件图标 */}
+      <view
+        style={{
+          width: '36px',
+          height: '36px',
+          flexShrink: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginRight: spacing.sm,
+        }}
+      >
+        <IconFile size={30} color={tone} />
+      </view>
+
+      {/* 文件名 + 大小：必须给定宽度，否则 text 会横向撑开 */}
+      <view
+        style={{
+          width: '184px',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
+        <text
+          style={{ color: tone, fontSize: fontSize.sm }}
+          text-maxline="1"
+          text-ellipsis="true"
+        >
+          {att?.filename ?? '文件'}
+        </text>
+        <text style={{ color: subTone, fontSize: '10px', marginTop: '2px' }}>
+          {expired ? '文件已过期（仅保留 30 天）' : formatBytes(att?.size ?? 0)}
+        </text>
+      </view>
+    </view>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /* 语音气泡                                                             */
 /* ------------------------------------------------------------------ */
 
@@ -1529,19 +1631,8 @@ function MessageContent(props: { message: Message; isSelf: boolean }) {
       );
     }
 
-    case 'file': {
-      const att = message.attachments[0];
-      return (
-        <view style={{}}>
-          <text style={{ color: isSelf ? '#fff' : colors.text, fontSize: fontSize.sm }} text-maxline="1">
-            {att?.filename ?? '文件'}
-          </text>
-          <text style={{ color: isSelf ? 'rgba(255,255,255,0.7)' : colors.textMuted, fontSize: '10px' }}>
-            {formatBytes(att?.size ?? 0)}
-          </text>
-        </view>
-      );
-    }
+    case 'file':
+      return <FileBubble message={message} isSelf={isSelf} />;
 
     case 'call':
       return (

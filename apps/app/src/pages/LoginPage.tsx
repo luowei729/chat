@@ -108,7 +108,7 @@ export function LoginPage() {
           </view>
 
           <text style={{ fontSize: fontSize.hero, color: colors.text, fontWeight: '700' }}>
-            chat
+            Chat
           </text>
           <text
             style={{

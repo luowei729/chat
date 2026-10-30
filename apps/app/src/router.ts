@@ -107,6 +107,39 @@ export function popTo(name: Route['name']): void {
   });
 }
 
+/**
+ * 切换底部标签
+ * ============================================================
+ * 【为什么不能用 push / pop】
+ * 三个标签是**平级**的，不是层级关系。之前各页写成
+ *   chats → push(settings) → push(contacts)
+ * 栈就变成 [chats, settings, contacts]，此时点「聊天」执行 pop()，
+ * 只是退一层，落在 **settings**… 再点还是退，最后落在 contacts。
+ * 用户看到的现象就是「点聊天却跳到联系人」。
+ *
+ * 正确语义：切标签 = 重置栈到该标签的根页面，
+ * 丢弃之前标签页留下的历史（详情页也一并丢弃，符合 Telegram 行为）。
+ *
+ * 标签根页面之间的往返不产生历史记录，
+ * 因此在任意标签根页面按返回键都是「最小化 App」。
+ */
+export function switchTab(tab: 'chats' | 'contacts' | 'settings'): void {
+  const target: Route =
+    tab === 'chats'
+      ? { name: 'conversations' }
+      : tab === 'contacts'
+        ? { name: 'contacts' }
+        : { name: 'settings' };
+
+  const stack = routerStore.get().stack;
+  const top = stack[stack.length - 1];
+
+  // 已经在目标标签根页面时不动，避免无意义的重渲染
+  if (stack.length === 1 && top?.name === target.name) return;
+
+  reset(target);
+}
+
 /** 当前是否还有上一页（根页面返回 false） */
 export function canGoBack(): boolean {
   return routerStore.get().stack.length > 1;

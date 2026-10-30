@@ -20,7 +20,12 @@ import { ErrorCode } from '@chat/shared';
 import type { FastifyInstance } from 'fastify';
 import { AppError } from '../../lib/app-error.js';
 import { ok } from '../../lib/http.js';
-import { notifyFriendAccepted, notifyFriendRequest, notifyFriendRemoved } from '../../ws/gateway.js';
+import {
+  notifyFriendAccepted,
+  notifyFriendRemoved,
+  notifyFriendRequest,
+  notifyNewConversation,
+} from '../../ws/gateway.js';
 import * as service from './service.js';
 
 /** 统一 zod 校验 */
@@ -72,6 +77,18 @@ export default async function friendRoutes(app: FastifyInstance): Promise<void> 
       avatarUrl: null,
       conversationId: result.conversationId,
     });
+
+    /**
+     * 广播新会话
+     * ------------------------------------------------------------
+     * addFriendDirectly 会顺手建一个私聊。如果只发 friend.accepted，
+     * 两端都不会刷新会话列表 —— 用户看到的现象就是
+     * 「加了好友，但聊天列表里什么都没有」。
+     * 必须和 createDirect 一样发 conversation.new。
+     */
+    if (result.conversationId) {
+      notifyNewConversation([req.userId, userId], result.conversationId);
+    }
     return ok(reply, result);
   });
 

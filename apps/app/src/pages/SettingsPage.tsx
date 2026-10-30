@@ -17,7 +17,7 @@
 
 import { useEffect, useState } from '@lynx-js/react';
 import { getInviteOverview, logout } from '../api/index.js';
-import { pop, push, reset } from '../router.js';
+import { push, reset, switchTab } from '../router.js';
 import { clearFriends, useFriends } from '../store/friends.js';
 import { setUser, useAuth } from '../store/auth.js';
 import {
@@ -231,10 +231,7 @@ export function SettingsPage() {
       {/* 底部导航 */}
       <TabBar
         active="settings"
-        onChange={(key) => {
-          if (key === 'chats') pop();
-          else if (key === 'contacts') push({ name: 'contacts' });
-        }}
+        onChange={switchTab}
       />
     </view>
   );

@@ -45,7 +45,7 @@
 
 import { API_BASE } from '../config.js';
 import { authHeaders } from '../api/client.js';
-import { getNativeModule } from './globals.js';
+import { getGlobalEventEmitter, getNativeModule } from './globals.js';
 
 /* ------------------------------------------------------------------ */
 /* 类型                                                                 */
@@ -231,6 +231,48 @@ function callNative<T>(
 }
 
 /* ------------------------------------------------------------------ */
+/* 上传进度（全局事件通道）                                              */
+/* ------------------------------------------------------------------ */
+/**
+ * 为什么进度不走 Callback
+ * ------------------------------------------------------------
+ * Lynx 的 Callback 是**一次性**的：第一次 invoke 之后即失效。
+ * 之前用它上报进度，导致第一个进度帧发出后，后续进度与最终结果
+ * 全部丢失 —— Promise 永远挂起，界面卡在「发送中 0%」。
+ *
+ * 现在：进度走原生全局事件（可无限广播），
+ *       Callback 只用于最终结果（保证只调用一次）。
+ * uploadId 把两边配对起来。
+ */
+type ProgressListener = (ratio: number) => void;
+const progressListeners = new Map<string, ProgressListener>();
+let progressSubscribed = false;
+
+function ensureProgressSubscribed(): void {
+  if (progressSubscribed) return;
+  const emitter = getGlobalEventEmitter();
+  if (!emitter) return;
+  progressSubscribed = true;
+
+  try {
+    emitter.addListener('uploadProgress', (...args: unknown[]) => {
+      // 原生按 (uploadId, ratio) 两个参数推送
+      const id = typeof args[0] === 'string' ? args[0] : '';
+      const ratio = typeof args[1] === 'number' ? args[1] : 0;
+      const cb = progressListeners.get(id);
+      if (cb) cb(ratio);
+    });
+  } catch {
+    progressSubscribed = false;
+  }
+}
+
+/** 生成一个上传 id（与消息 clientId 无关，仅用于进度配对） */
+function newUploadId(): string {
+  return `up${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/* ------------------------------------------------------------------ */
 /* 选图 / 拍照 / 录像 / 选文件                                          */
 /* ------------------------------------------------------------------ */
 
@@ -399,18 +441,32 @@ export async function uploadPicked(
   let bodyText: string;
 
   if (native()?.uploadFile) {
-    const r = await callNative<{ status?: number; body?: string }>('uploadFile', [
-      JSON.stringify({
-        uri: file.uri,
-        name: file.name,
-        mime: file.mime,
-        url,
-        headers,
-        fields,
-      }),
-    ],
-      onProgress,
-    );
+    /**
+     * 注册进度监听后再发起上传
+     * 注意顺序：必须先 add 再调用原生，否则首批进度帧会丢。
+     */
+    const uploadId = newUploadId();
+    if (onProgress) {
+      ensureProgressSubscribed();
+      progressListeners.set(uploadId, onProgress);
+    }
+
+    let r: { status?: number; body?: string };
+    try {
+      r = await callNative<{ status?: number; body?: string }>('uploadFile', [
+        JSON.stringify({
+          uploadId,
+          uri: file.uri,
+          name: file.name,
+          mime: file.mime,
+          url,
+          headers,
+          fields,
+        }),
+      ]);
+    } finally {
+      progressListeners.delete(uploadId);
+    }
     const status = Number(r.status ?? 0);
     bodyText = String(r.body ?? '');
     if (status === 401) throw new PlatformMediaError('failed', '登录已过期，请重新登录');

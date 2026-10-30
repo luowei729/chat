@@ -17,7 +17,7 @@
 import { useEffect, useState } from '@lynx-js/react';
 import type { FriendItem } from '@chat/shared';
 import { createDirect } from '../api/index.js';
-import { pop, push } from '../router.js';
+import { push, switchTab } from '../router.js';
 import { refreshFriends, useFriends } from '../store/friends.js';
 import { colors, commonStyles, fontSize, radius, spacing } from '../theme.js';
 import { TabBar } from './TabBar.js';
@@ -253,10 +253,7 @@ export function ContactsPage() {
       {/* 底部导航 */}
       <TabBar
         active="contacts"
-        onChange={(key) => {
-          if (key === 'chats') pop();
-          else if (key === 'settings') push({ name: 'settings' });
-        }}
+        onChange={switchTab}
         contactBadge={requests.incoming.length}
       />
     </view>

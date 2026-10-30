@@ -33,6 +33,18 @@ export interface MediaViewerParams {
 export function MediaViewerPage(props: MediaViewerParams) {
   const { url, kind, filename } = props;
   const [failed, setFailed] = useState(false);
+  /**
+   * 加载中
+   * ------------------------------------------------------------
+   * 图片/视频从服务端拉取有延迟（大图尤其明显），
+   * 没有加载态时用户只看到一片黑，会以为功能坏了。
+   * 这里在内容就绪前盖一层「加载中」。
+   * 事件选择：
+   *   图片 → bindload（解码完成）
+   *   视频 → bindfirstframe（已有可显示画面）；
+   *          bindloadedmetadata 在 Lynx 的 VideoProps 里不存在。
+   */
+  const [loading, setLoading] = useState(true);
   const src = mediaUrl(url);
 
   return (
@@ -117,16 +129,68 @@ export function MediaViewerPage(props: MediaViewerParams) {
             style={{ width: '100%', height: '100%' }}
             auto-play={false}
             muted={false}
+            /* 首帧事件 = 已有可显示画面，最贴近「加载完成」 */
+            bindfirstframe={() => setLoading(false)}
+            bindbuffering={() => setLoading(true)}
+            bindplaying={() => setLoading(false)}
+            bindended={() => setLoading(false)}
+            bindstopped={() => setLoading(false)}
+            binderror={() => {
+              setLoading(false);
+              setFailed(true);
+            }}
           />
         ) : (
           <image
             src={src}
             style={{ width: '100%', height: '100%' }}
             mode="aspectFit"
-            bindload={() => undefined}
-            binderror={() => setFailed(true)}
+            bindload={() => setLoading(false)}
+            binderror={() => {
+              setLoading(false);
+              setFailed(true);
+            }}
           />
         )}
+
+        {/* 加载遮罩 */}
+        {loading && !failed ? (
+          <view
+            style={{
+              position: 'absolute',
+              left: 0,
+              top: 0,
+              right: 0,
+              bottom: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: '#000000',
+            }}
+          >
+            {/* 转圈：用旋转的圆环模拟（Lynx 无 CSS animation，用 12 段圆弧拼） */}
+            <view
+              style={{
+                width: '34px',
+                height: '34px',
+                borderRadius: '17px',
+                borderWidth: '3px',
+                borderColor: 'rgba(255,255,255,0.18)',
+                borderTopColor: 'rgba(255,255,255,0.9)',
+              }}
+            />
+            <text
+              style={{
+                color: 'rgba(255,255,255,0.55)',
+                fontSize: fontSize.sm,
+                marginTop: spacing.md,
+              }}
+            >
+              {kind === 'video' ? '视频加载中…' : '图片加载中…'}
+            </text>
+          </view>
+        ) : null}
       </view>
 
       {/* 底部提示 */}

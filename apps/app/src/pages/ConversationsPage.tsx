@@ -17,7 +17,7 @@
 import { useState } from '@lynx-js/react';
 import type { ConversationSummary } from '@chat/shared';
 import { listConversations } from '../api/index.js';
-import { push } from '../router.js';
+import { push, switchTab } from '../router.js';
 import { setConversations, useConversations } from '../store/conversations.js';
 import { colors, commonStyles, fontSize, radius, spacing } from '../theme.js';
 import { TabBar } from './TabBar.js';
@@ -178,10 +178,7 @@ export function ConversationsPage() {
       {/* 底部导航（Telegram 三栏：聊天 / 联系人 / 设置） */}
       <TabBar
         active="chats"
-        onChange={(key) => {
-          if (key === 'contacts') push({ name: 'contacts' });
-          else if (key === 'settings') push({ name: 'settings' });
-        }}
+        onChange={switchTab}
         chatBadge={totalUnread}
       />
     </view>

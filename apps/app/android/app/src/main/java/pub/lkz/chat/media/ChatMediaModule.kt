@@ -188,22 +188,30 @@ class ChatMediaModule : LynxModule {
             MediaBridge.fail(callback, "缺少上传参数")
             return
         }
-        // 进度回调：同一个 callback 多次 invoke，JS 侧按字段区分
-        // {progress:0.x} 是进度，{ok:true/false} 是最终结果。
-        // Lynx 的 Callback 支持多次调用，JS 端用回调式 API 接收。
+        /**
+         * 进度上报
+         * ------------------------------------------------------------
+         * 【不能用同一个 Callback 反复 invoke】
+         * 实测：Lynx 的 Callback 是一次性的 —— 第一次 invoke 之后
+         * 这个回调就失效了。如果拿它报进度，那么：
+         *   第 1 帧 progress(0.01) → JS 侧识别为 pending，不 resolve
+         *   之后的 progress          → 全部丢弃
+         *   最终的 ok/status/body    → 也丢弃
+         * 结果就是 Promise 永远挂起，界面卡在「发送中 0%」。
+         *
+         * 正确做法：进度走全局事件（可以无限次广播），
+         * Callback 只用于「最终结果」，保证只调用一次。
+         * uploadId 由 JS 生成并随参数传入，两边据此配对。
+         */
+        val uploadId = try {
+            org.json.JSONObject(optsJson).optString("uploadId", "")
+        } catch (_: Throwable) {
+            ""
+        }
+
         val onProgress: (Double) -> Unit = { p ->
-            try {
-                callback.invoke(
-                    JavaOnlyMap.from(
-                        mapOf(
-                            "progress" to p,
-                            "ok" to false,
-                            "pending" to true,
-                        ),
-                    ),
-                )
-            } catch (_: Throwable) {
-                // JS 侧已销毁（用户退出会话），忽略
+            if (uploadId.isNotEmpty()) {
+                pub.lkz.chat.MainActivity.current?.sendUploadProgress(uploadId, p)
             }
         }
 

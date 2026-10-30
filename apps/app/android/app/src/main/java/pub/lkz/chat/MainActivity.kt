@@ -673,6 +673,28 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * 广播上传进度给前端
+     * ------------------------------------------------------------
+     * 为什么走全局事件而不是原生模块的 Callback：
+     * Lynx 的 Callback 是一次性的，第一次 invoke 之后就失效。
+     * 用它报进度会导致最终结果丢失、Promise 永久挂起
+     * （现象就是「视频一直卡在发送中 0%」）。
+     *
+     * 全局事件可以无限次广播，是进度上报的正确通道。
+     * uploadId 由 JS 生成，两端据此把进度配对到具体消息。
+     */
+    fun sendUploadProgress(uploadId: String, ratio: Double) {
+        try {
+            val args = com.lynx.react.bridge.JavaOnlyArray()
+            args.pushString(uploadId)
+            args.pushDouble(ratio)
+            lynxView?.sendGlobalEvent("uploadProgress", args)
+        } catch (_: Throwable) {
+            // 页面已销毁，丢弃即可
+        }
+    }
+
     override fun onPause() {
         super.onPause()
         try {

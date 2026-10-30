@@ -17,9 +17,10 @@
 import { useEffect, useState } from '@lynx-js/react';
 import type { FriendItem } from '@chat/shared';
 import { createDirect } from '../api/index.js';
-import { push } from '../router.js';
+import { pop, push } from '../router.js';
 import { refreshFriends, useFriends } from '../store/friends.js';
 import { colors, commonStyles, fontSize, radius, spacing } from '../theme.js';
+import { TabBar } from './TabBar.js';
 
 /** 每页条数：一屏大约能放 8 条，取 8 保证不需要滚动 */
 const PAGE_SIZE = 8;
@@ -59,34 +60,59 @@ export function ContactsPage() {
 
   return (
     <view style={commonStyles.page}>
-      {/* 顶部栏 */}
-      <view style={commonStyles.header}>
-        <view style={commonStyles.headerSide}>
-          <text
-            style={{ color: colors.primary, fontSize: fontSize.md }}
-            bindtap={() => push({ name: 'conversations' })}
-          >
-            消息
-          </text>
-        </view>
-        <view style={commonStyles.headerCenter}>
-          <text style={commonStyles.headerTitle}>通讯录</text>
-        </view>
-        <view style={{ ...commonStyles.headerSide, justifyContent: 'flex-end' }}>
-          <text
-            style={{ color: colors.primary, fontSize: fontSize.md }}
-            bindtap={() => push({ name: 'new-chat' })}
-          >
-            添加
-          </text>
+      {/* 标题栏（Telegram 风格）：标题左对齐，右侧只留「添加」图标 */}
+      <view
+        style={{
+          width: '100%',
+          height: '56px',
+          flexShrink: 0,
+          display: 'flex',
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          paddingLeft: spacing.lg,
+          paddingRight: spacing.lg,
+          backgroundColor: colors.surface,
+          borderBottomWidth: '1px',
+          borderBottomColor: colors.border,
+        }}
+      >
+        <text style={{ color: colors.text, fontSize: fontSize.xl, fontWeight: '700' }}>
+          联系人
+        </text>
+
+        <view
+          style={{
+            width: '40px',
+            height: '40px',
+            display: 'flex',
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+          bindtap={() => push({ name: 'new-chat' })}
+        >
+          <text style={{ fontSize: '20px', color: colors.primary }}>➕</text>
         </view>
       </view>
 
-      {/* 内容区 */}
+      {/*
+        内容区：绝对定位锁定在「标题栏下沿」到「底部导航上沿」之间。
+        ------------------------------------------------------------
+        为什么不用 flex:1：
+        实测本页 flex:1 拿不到剩余高度，导致子卡片被 flexShrink
+        压扁、互相重叠（数据都在，只是布局错乱）。
+        position:absolute + top/bottom 是确定的坐标约束，
+        完全不依赖父级的 flex 分配，在任何渲染时机下都稳定。
+        标题栏 56px、底部导航 56px 是固定值，直接写死。
+      */}
       <view
         style={{
-          flex: 1,
-          width: '100%',
+          position: 'absolute',
+          left: 0,
+          top: '56px',
+          right: 0,
+          bottom: '56px',
           display: 'flex',
           flexDirection: 'column',
           paddingLeft: spacing.lg,
@@ -136,7 +162,7 @@ export function ContactsPage() {
                 borderRadius: radius.full,
                 backgroundColor: colors.danger,
                 display: 'flex',
-                flexDirection: 'row',
+                flexDirection: 'row', width: '100%',
                 alignItems: 'center',
                 justifyContent: 'center',
                 paddingLeft: '6px',
@@ -222,6 +248,16 @@ export function ContactsPage() {
           </view>
         ) : null}
       </view>
+
+      {/* 底部导航 */}
+      <TabBar
+        active="contacts"
+        onChange={(key) => {
+          if (key === 'chats') pop();
+          else if (key === 'settings') push({ name: 'settings' });
+        }}
+        contactBadge={requests.incoming.length}
+      />
     </view>
   );
 }
@@ -238,6 +274,7 @@ function FriendRow(props: { friend: FriendItem; onChat: () => void }) {
     <view
       style={{
         width: '100%',
+        flexShrink: 0,
         display: 'flex',
         flexDirection: 'row',
         alignItems: 'center',

@@ -135,7 +135,7 @@ export function NewChatPage() {
         ) : null}
 
         {/* 搜索框 */}
-        <view style={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
+        <view style={{ display: 'flex', flexDirection: 'row', width: '100%', alignItems: 'center' }}>
           <view style={{ flex: 1, marginRight: spacing.sm }}>
             <input
               style={commonStyles.input}
@@ -187,7 +187,7 @@ export function NewChatPage() {
             key={user.id}
             style={{
               display: 'flex',
-              flexDirection: 'row',
+              flexDirection: 'row', width: '100%',
               alignItems: 'center',
               padding: spacing.md,
               borderBottomWidth: '1px',

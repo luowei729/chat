@@ -1,12 +1,16 @@
 /**
  * ============================================================
- * 会话列表页（首页）
+ * 聊天列表（首页，Telegram 风格）
  * ------------------------------------------------------------
- * 功能：
- * 1. 展示所有会话（置顶优先，按最后消息时间排序）；
- * 2. 未读数红点；
- * 3. 下拉刷新；
- * 4. 右上角入口：新建会话 / 我的邀请 / 我的资料。
+ * 结构：
+ *   标题栏  「聊天」 + 搜索 / 新建 图标
+ *   会话列表（置顶优先，按最后消息时间排序）
+ *   底部导航  聊天 / 联系人 / 设置
+ *
+ * 设计口径（对齐 Telegram）：
+ * 1. 标题左对齐、大字号；操作靠图标而不用文字按钮；
+ * 2. 主导航全部下沉到底部 Tab，标题栏不再塞业务入口；
+ * 3. 未读红点聚合到「聊天」Tab 上，单会话红点同时保留。
  * ============================================================
  */
 
@@ -15,13 +19,15 @@ import type { ConversationSummary } from '@chat/shared';
 import { listConversations } from '../api/index.js';
 import { push } from '../router.js';
 import { setConversations, useConversations } from '../store/conversations.js';
-import { useAuth } from '../store/auth.js';
 import { colors, commonStyles, fontSize, radius, spacing } from '../theme.js';
+import { TabBar } from './TabBar.js';
 
 export function ConversationsPage() {
   const { list, loaded, loading } = useConversations();
-  const auth = useAuth();
   const [refreshing, setRefreshing] = useState(false);
+
+  /** 全部会话的未读总数（给底部「聊天」Tab 用） */
+  const totalUnread = list.reduce((sum, c) => sum + (c.unreadCount ?? 0), 0);
 
   /** 刷新列表 */
   const refresh = async () => {
@@ -37,6 +43,9 @@ export function ConversationsPage() {
     }
   };
 
+  void refresh;
+  void refreshing;
+
   /** 进入聊天页 */
   const openChat = (conv: ConversationSummary) => {
     push({
@@ -47,60 +56,67 @@ export function ConversationsPage() {
 
   return (
     <view style={commonStyles.page}>
-      {/* 顶部栏：品牌居左，动作用大按钮，全部垂直居中 */}
-      <view style={commonStyles.header}>
-        <view style={{ flex: 1, display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
+      {/*
+        顶部栏（Telegram 风格）
+        ------------------------------------------------------------
+        左侧：页面标题「聊天」
+        右侧：搜索、新建 两个图标按钮
+        不再把「通讯录 / 邀请 / 我」塞进标题栏 ——
+        这些入口由底部 Tab 承担，与 Telegram 一致。
+      */}
+      <view
+        style={{
+          width: '100%',
+          height: '56px',
+          flexShrink: 0,
+          display: 'flex',
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          paddingLeft: spacing.lg,
+          paddingRight: spacing.lg,
+          backgroundColor: colors.surface,
+          borderBottomWidth: '1px',
+          borderBottomColor: colors.border,
+        }}
+      >
+        <text style={{ color: colors.text, fontSize: fontSize.xl, fontWeight: '700' }}>
+          聊天
+        </text>
+
+        <view style={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
           <view
             style={{
-              width: '32px',
-              height: '32px',
-              borderRadius: '10px',
-              backgroundColor: colors.primary,
+              width: '40px',
+              height: '40px',
               display: 'flex',
+              flexDirection: 'row',
               alignItems: 'center',
               justifyContent: 'center',
-              marginRight: spacing.sm,
             }}
+            bindtap={() => push({ name: 'search-messages' })}
           >
-            <text style={{ color: '#fff', fontSize: fontSize.md, fontWeight: '700' }}>C</text>
+            <text style={{ fontSize: '18px', color: colors.textMuted }}>🔍</text>
           </view>
-          <text style={{ color: colors.text, fontSize: fontSize.lg, fontWeight: '700' }}>
-            chat
-          </text>
+          <view
+            style={{
+              width: '40px',
+              height: '40px',
+              display: 'flex',
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+            bindtap={() => push({ name: 'new-chat' })}
+          >
+            <text style={{ fontSize: '20px', color: colors.primary }}>✏️</text>
+          </view>
         </view>
-        <text
-          style={{
-            color: colors.primary,
-            fontSize: fontSize.sm,
-            paddingLeft: spacing.sm,
-            paddingRight: spacing.sm,
-            paddingTop: spacing.xs,
-            paddingBottom: spacing.xs,
-          }}
-          bindtap={() => push({ name: 'new-chat' })}
-        >
-          新建
-        </text>
-        <text
-          style={{
-            color: colors.textMuted,
-            fontSize: fontSize.sm,
-            padding: spacing.sm,
-          }}
-          bindtap={() => push({ name: 'invite' })}
-        >
-          邀请
-        </text>
-        <text
-          style={{ color: colors.textMuted, fontSize: fontSize.sm, padding: spacing.sm }}
-          bindtap={() => push({ name: 'profile' })}
-        >
-          我
-        </text>
       </view>
 
       {/* 会话列表 */}
-      <view style={{ flex: 1, width: '100%', display: 'flex', flexDirection: 'column' }}>
+      {/* paddingBottom 给底部导航留位（TabBar 是绝对定位） */}
+      <view style={{ flex: 1, width: '100%', display: 'flex', flexDirection: 'column', paddingBottom: '64px' }}>
         {!loaded || (loading && list.length === 0) ? (
           <view style={{ padding: spacing.xl, alignItems: 'center' }}>
             <text style={{ color: colors.textMuted, fontSize: fontSize.sm }}>加载中…</text>
@@ -158,22 +174,15 @@ export function ConversationsPage() {
         <view style={{ height: spacing.xl }} />
       </view>
 
-      {/* 刷新按钮（Lynx 各端下拉刷新手势不一致，用按钮兜底） */}
-      <view
-        style={{
-          height: '40px',
-          borderTopWidth: '1px',
-          borderTopColor: colors.border,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
+      {/* 底部导航（Telegram 三栏：聊天 / 联系人 / 设置） */}
+      <TabBar
+        active="chats"
+        onChange={(key) => {
+          if (key === 'contacts') push({ name: 'contacts' });
+          else if (key === 'settings') push({ name: 'settings' });
         }}
-        bindtap={refresh}
-      >
-        <text style={{ color: colors.textMuted, fontSize: fontSize.xs }}>
-          {refreshing ? '刷新中…' : `已登录：${auth.user?.nickname ?? ''} · 点击刷新`}
-        </text>
-      </view>
+        chatBadge={totalUnread}
+      />
     </view>
   );
 }
@@ -186,7 +195,7 @@ function ConversationItem(props: { conv: ConversationSummary; onTap: () => void 
     <view
       style={{
         display: 'flex',
-        flexDirection: 'row',
+        flexDirection: 'row', width: '100%',
         alignItems: 'center',
         padding: spacing.md,
         borderBottomWidth: '1px',
@@ -220,17 +229,17 @@ function ConversationItem(props: { conv: ConversationSummary; onTap: () => void 
         )}
       </view>
 
-      {/* 标题 + 最后消息：用 view 包裹 text 做伸缩，避免 text 直接 flex 塌陷 */}
-      <view style={{ flex: 1 }}>
+      {/* 标题 + 最后消息：用固定百分比宽度，避免 flex:1 在本父级链下塌成 0 */}
+      <view style={{ width: '72%' }}>
         <view
           style={{
             display: 'flex',
-            flexDirection: 'row',
+            flexDirection: 'row', width: '100%',
             alignItems: 'center',
             marginBottom: '4px',
           }}
         >
-          <view style={{ flex: 1, marginRight: spacing.sm }}>
+          <view style={{ width: '76%', marginRight: spacing.sm }}>
             <text
               style={{ color: colors.text, fontSize: fontSize.md, fontWeight: '500' }}
               text-maxline="1"
@@ -244,8 +253,8 @@ function ConversationItem(props: { conv: ConversationSummary; onTap: () => void 
           </text>
         </view>
 
-        <view style={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
-          <view style={{ flex: 1, marginRight: spacing.sm }}>
+        <view style={{ display: 'flex', flexDirection: 'row', width: '100%', alignItems: 'center' }}>
+          <view style={{ width: '82%', marginRight: spacing.sm }}>
             <text style={{ color: colors.textMuted, fontSize: fontSize.sm }} text-maxline="1">
               {conv.lastMessage
                 ? `${conv.lastMessage.senderName}: ${conv.lastMessage.summary}`

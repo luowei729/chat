@@ -257,7 +257,7 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
       <view
         style={{
           display: 'flex',
-          flexDirection: 'row',
+          flexDirection: 'row', width: '100%',
           alignItems: 'center',
           padding: spacing.sm,
           backgroundColor: colors.surface,
@@ -378,7 +378,7 @@ function MessageBubble(props: { message: Message; isSelf: boolean }) {
           <MessageContent message={message} isSelf={isSelf} />
         </view>
 
-        <view style={{ display: 'flex', flexDirection: 'row', marginTop: '2px' }}>
+        <view style={{ display: 'flex', flexDirection: 'row', width: '100%', marginTop: '2px' }}>
           <text style={{ color: colors.textFaint, fontSize: '10px' }}>
             {formatClock(message.createdAt)}
           </text>
@@ -431,7 +431,7 @@ function MessageContent(props: { message: Message; isSelf: boolean }) {
       const att = message.attachments[0];
       const sec = att?.durationMs ? Math.max(1, Math.round(att.durationMs / 1000)) : 0;
       return (
-        <view style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        <view style={{ display: 'flex', flexDirection: 'row', width: '100%', alignItems: 'center' }}>
           <text style={{ color: isSelf ? '#fff' : colors.text, fontSize: fontSize.md }}>▶</text>
           <text style={{ color: isSelf ? '#fff' : colors.text, fontSize: fontSize.sm }}>
             语音 {sec}″
@@ -444,7 +444,7 @@ function MessageContent(props: { message: Message; isSelf: boolean }) {
       const att = message.attachments[0];
       const sec = att?.durationMs ? Math.max(1, Math.round(att.durationMs / 1000)) : 0;
       return (
-        <view style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        <view style={{ display: 'flex', flexDirection: 'row', width: '100%', alignItems: 'center' }}>
           <text style={{ color: isSelf ? '#fff' : colors.text, fontSize: fontSize.md }}>▶</text>
           <text style={{ color: isSelf ? '#fff' : colors.text, fontSize: fontSize.sm }}>
             视频 {sec}″
@@ -456,7 +456,7 @@ function MessageContent(props: { message: Message; isSelf: boolean }) {
     case 'file': {
       const att = message.attachments[0];
       return (
-        <view style={{ gap: 4 }}>
+        <view style={{}}>
           <text style={{ color: isSelf ? '#fff' : colors.text, fontSize: fontSize.sm }} text-maxline="1">
             📎 {att?.filename ?? '文件'}
           </text>

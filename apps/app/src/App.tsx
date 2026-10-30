@@ -42,6 +42,8 @@ import { ContactsPage } from './pages/ContactsPage.js';
 import { FriendRequestsPage } from './pages/FriendRequestsPage.js';
 import { UserProfilePage } from './pages/UserProfilePage.js';
 import { GroupInfoPage } from './pages/GroupInfoPage.js';
+import { SettingsPage } from './pages/SettingsPage.js';
+import { SearchMessagesPage } from './pages/SearchMessagesPage.js';
 
 export function App() {
   const auth = useAuth();
@@ -283,6 +285,10 @@ function renderRoute(name: string, params?: Record<string, unknown>) {
           title={params?.title as string | undefined}
         />
       );
+    case 'settings':
+      return <SettingsPage />;
+    case 'search-messages':
+      return <SearchMessagesPage />;
     default:
       return <ConversationsPage />;
   }

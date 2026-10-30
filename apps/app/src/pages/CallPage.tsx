@@ -278,7 +278,7 @@ export function CallPage(props: {
         style={{
           paddingBottom: '60px',
           display: 'flex',
-          flexDirection: 'row',
+          flexDirection: 'row', width: '100%',
           justifyContent: 'center',
         }}
       >

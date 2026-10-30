@@ -122,7 +122,7 @@ export function ResetPasswordPage() {
             <view
               style={{
                 display: 'flex',
-                flexDirection: 'row',
+                flexDirection: 'row', width: '100%',
                 alignItems: 'center',
                 marginTop: spacing.sm,
               }}

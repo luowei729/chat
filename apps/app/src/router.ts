@@ -34,7 +34,11 @@ export interface Route {
     /** 他人资料页 */
     | 'user-profile'
     /** 群信息 / 成员管理 */
-    | 'group-info';
+    | 'group-info'
+    /** 设置 */
+    | 'settings'
+    /** 消息全文搜索 */
+    | 'search-messages';
   params?: Record<string, unknown>;
 }
 

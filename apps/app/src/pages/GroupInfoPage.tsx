@@ -526,7 +526,7 @@ const smallBtnStyle = {
   height: '38px',
   borderRadius: radius.md,
   display: 'flex',
-  flexDirection: 'row',
+  flexDirection: 'row', width: '100%',
   alignItems: 'center',
   justifyContent: 'center',
   paddingLeft: spacing.md,

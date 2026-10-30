@@ -92,7 +92,7 @@ export function FriendRequestsPage() {
       >
         <view
           style={{
-            flex: 1,
+            width: '48%',
             height: '40px',
             borderRadius: radius.md,
             backgroundColor: tab === 'incoming' ? colors.primarySoft : 'transparent',
@@ -102,7 +102,7 @@ export function FriendRequestsPage() {
             flexDirection: 'row',
             alignItems: 'center',
             justifyContent: 'center',
-            marginRight: spacing.sm,
+            marginRight: '4%',
           }}
           bindtap={() => setTab('incoming')}
         >
@@ -117,7 +117,7 @@ export function FriendRequestsPage() {
         </view>
         <view
           style={{
-            flex: 1,
+            width: '48%',
             height: '40px',
             borderRadius: radius.md,
             backgroundColor: tab === 'outgoing' ? colors.primarySoft : 'transparent',
@@ -141,11 +141,14 @@ export function FriendRequestsPage() {
         </view>
       </view>
 
-      {/* 列表 */}
+      {/* 列表：绝对定位锁定在「标题栏+分区切换」下方，避免 flex:1 塌陷 */}
       <view
         style={{
-          flex: 1,
-          width: '100%',
+          position: 'absolute',
+          left: 0,
+          top: '108px',
+          right: 0,
+          bottom: 0,
           display: 'flex',
           flexDirection: 'column',
           paddingLeft: spacing.lg,
@@ -218,6 +221,7 @@ function RequestRow(props: {
     <view
       style={{
         width: '100%',
+        flexShrink: 0,
         display: 'flex',
         flexDirection: 'row',
         alignItems: 'center',
@@ -258,7 +262,7 @@ function RequestRow(props: {
       </view>
 
       {item.incoming ? (
-        <view style={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
+        <view style={{ display: 'flex', flexDirection: 'row', width: '100%', alignItems: 'center' }}>
           <view
             style={{
               width: '56px',

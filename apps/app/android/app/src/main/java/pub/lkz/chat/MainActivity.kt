@@ -601,12 +601,9 @@ class MainActivity : AppCompatActivity() {
 
     @Deprecated("Android 13+ 推荐用 OnBackPressedDispatcher")
     override fun onBackPressed() {
-        // 诊断条收起时，先按返回恢复它（方便再次排查）
-        if (this::debugBar.isInitialized && debugBar.visibility != View.VISIBLE) {
-            debugBar.visibility = View.VISIBLE
-            return
-        }
-
+        // 诊断条已收起时，不再因为按返回键而重新弹出 ——
+        // 那会让正常使用（返回上一页）被诊断条打断，
+        // 而且会挤压 Lynx 页面布局。排查时用 BUILD_TAG 判断版本即可。
         val now = System.currentTimeMillis()
         if (now - lastBackPressedAt < DOUBLE_BACK_INTERVAL) {
             finishAffinity()

@@ -176,7 +176,7 @@ export function InvitePage() {
                 style={{
                   ...commonStyles.card,
                   display: 'flex',
-                  flexDirection: 'row',
+                  flexDirection: 'row', width: '100%',
                   alignItems: 'center',
                   marginBottom: spacing.sm,
                 }}
@@ -219,7 +219,7 @@ export function InvitePage() {
                 style={{
                   ...commonStyles.card,
                   display: 'flex',
-                  flexDirection: 'row',
+                  flexDirection: 'row', width: '100%',
                   alignItems: 'center',
                   marginBottom: spacing.sm,
                 }}

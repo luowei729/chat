@@ -236,18 +236,46 @@ async function rawFetch<T = unknown>(
       return { code: 0, data: undefined as T, serverTime: Date.now() };
     }
 
+    /**
+     * 先取 text 再 JSON.parse，不用 response.json()。
+     * ============================================================
+     * 原因：Lynx 运行时里 response.json() 不稳定——
+     * 同样的接口有时正常、有时直接抛错（无任何日志），
+     * 表现就是「服务器返回格式异常」时好时坏。
+     * text() 是更底层、更可靠的实现，拿到字符串后自己解析，
+     * 还能在解析失败时把原始内容放进错误信息，便于排查。
+     */
+    let rawText = '';
+    try {
+      rawText = await response.text();
+    } catch (e) {
+      throw new ApiError(
+        ErrorCode.INTERNAL_ERROR,
+        `响应读取失败：${(e as { message?: string }).message ?? 'unknown'}`,
+        httpStatus,
+      );
+    }
+
     let json: unknown;
     try {
-      json = await response.json();
+      json = JSON.parse(rawText);
     } catch {
-      throw new ApiError(ErrorCode.INTERNAL_ERROR, '服务器返回格式异常', httpStatus);
+      throw new ApiError(
+        ErrorCode.INTERNAL_ERROR,
+        `服务器返回格式异常（HTTP ${httpStatus}）：${rawText.slice(0, 120)}`,
+        httpStatus,
+      );
     }
 
     const parsed = json as ApiResponse<T>;
     // 服务端始终返回统一结构，这里直接透传
     if (typeof parsed?.code === 'number') return parsed;
 
-    throw new ApiError(ErrorCode.INTERNAL_ERROR, '服务器返回格式异常', httpStatus);
+    throw new ApiError(
+      ErrorCode.INTERNAL_ERROR,
+      `服务器返回格式异常（缺少 code）：${rawText.slice(0, 120)}`,
+      httpStatus,
+    );
   } catch (e) {
     if (e instanceof ApiError) throw e;
     // 超时或网络错误
@@ -278,14 +306,14 @@ export async function request<T = unknown>(
     await ensureFreshToken();
   }
 
-  let res = await rawFetch<T>(path, options);
+  let res = await rawFetchWithRetry<T>(path, options);
 
   // 401：尝试刷新一次后重试
   if (res.code === ErrorCode.TOKEN_EXPIRED || res.code === ErrorCode.UNAUTHORIZED) {
     if (!options.skipRefresh) {
       const ok = await refreshOnce();
       if (ok) {
-        res = await rawFetch<T>(path, options);
+        res = await rawFetchWithRetry<T>(path, options);
       } else {
         clearTokens();
       }
@@ -308,6 +336,42 @@ export async function request<T = unknown>(
     throw new ApiError(ErrorCode.INTERNAL_ERROR, '服务器返回格式异常');
   }
   return res.data;
+}
+
+/**
+ * 带一次自动重试的请求
+ * ============================================================
+ * 为什么要重试：
+ * Lynx 的 HTTP 服务（okhttp 实现）偶尔会返回状态 499 +
+ * 空响应体 —— 这是「请求被取消」的合成状态，不是服务端返回的
+ * （nginx 的 499 只写日志，不会发给客户端）。
+ * 触发原因可能是连接复用竞态或运行时内部取消。
+ *
+ * 这种失败有两个特征：status 为 0 或 499，且响应体为空字符串。
+ * 此时自动重试一次即可恢复；重试同样的请求是安全的，
+ * 因为服务端所有写接口都带幂等键（clientId / 天然幂等）。
+ */
+async function rawFetchWithRetry<T>(
+  path: string,
+  options: RawFetchOptions,
+): Promise<ApiResponse<T>> {
+  try {
+    const first = await rawFetch<T>(path, options);
+    // 传输出错时 rawFetch 不会走到这里（它会 throw）
+    return first;
+  } catch (e) {
+    if (!(e instanceof ApiError)) throw e;
+
+    // 只对「传输层疑似被取消」的情况重试，业务错误不重试
+    const msg = e.message ?? '';
+    const isTransportGlitch =
+      msg.includes('499') || msg.includes('响应读取失败') || msg.includes('网络连接失败');
+
+    if (!isTransportGlitch) throw e;
+
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    return rawFetch<T>(path, options);
+  }
 }
 
 /** GET 快捷方法 */

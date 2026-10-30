@@ -19,9 +19,11 @@ import type {
   IceConfigResponse,
   InviteOverview,
   Message,
+  MessageSearchResult,
   Page,
   RegisterRequest,
   SendMessageRequest,
+  SyncResult,
   UploadResult,
   UserProfileView,
   UserPublic,
@@ -222,6 +224,33 @@ export function updateGroupInfo(
   fields: { title?: string },
 ): Promise<{ success: boolean }> {
   return patch(`/conversations/${encodeURIComponent(conversationId)}/info`, fields);
+}
+
+/* ------------------------------------------------------------------ */
+/* 增量同步与全文搜索                                                   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 增量同步
+ * since=0 表示首次同步（服务端返回全量），
+ * 之后传上次响应的 serverTime，只拿变化部分。
+ */
+export function syncSince(since: number): Promise<SyncResult> {
+  return get(`/sync?since=${String(Math.max(0, Math.floor(since)))}`);
+}
+
+/** 全文搜索消息（中文走 ngram 索引） */
+export function searchMessages(params: {
+  q: string;
+  conversationId?: string;
+  before?: number;
+  limit?: number;
+}): Promise<MessageSearchResult> {
+  const qs: string[] = [`q=${encodeURIComponent(params.q)}`];
+  if (params.conversationId) qs.push(`conversationId=${encodeURIComponent(params.conversationId)}`);
+  if (params.before) qs.push(`before=${String(params.before)}`);
+  if (params.limit) qs.push(`limit=${String(params.limit)}`);
+  return get(`/search/messages?${qs.join('&')}`);
 }
 
 /* ------------------------------------------------------------------ */

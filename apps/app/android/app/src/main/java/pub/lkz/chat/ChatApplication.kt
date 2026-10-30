@@ -65,7 +65,7 @@ class ChatApplication : Application() {
         const val SHOW_DEBUG_BAR = true
 
         /** 构建标记：用户可在诊断条上看到，确认装的是新包 */
-        const val BUILD_TAG = "DIAG-7"
+        const val BUILD_TAG = "DIAG-8"
     }
 
     override fun onCreate() {

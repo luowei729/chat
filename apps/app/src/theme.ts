@@ -86,10 +86,17 @@ export const fontSize = {
 
 /** 常用组合样式 */
 export const commonStyles = {
-  /** 页面容器 */
+  /**
+   * 页面容器
+   *
+   * 用 flex:1 而不是 height:'100%'：
+   * 所有页面都是根容器的直接子元素（根容器 flex column + 100vh），
+   * flex:1 能稳定撑满；而 height:'100%' 在父级高度未定
+   * 或处于 scroll 容器内时会塌成 0，表现为整页空白。
+   */
   page: {
     width: '100%',
-    height: '100%',
+    flex: 1,
     backgroundColor: colors.bg,
     display: 'flex',
     flexDirection: 'column',

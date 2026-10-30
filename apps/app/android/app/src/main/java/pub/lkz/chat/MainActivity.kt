@@ -474,6 +474,13 @@ class MainActivity : AppCompatActivity() {
 
             override fun onFirstScreen() {
                 log("✓ onFirstScreen（首屏渲染完成）")
+                // 关键诊断：Lynx 是自绘引擎，view.childCount 永远是 0，
+                // 但 LynxView 自身的尺寸必须非零，否则 100vh 也会是 0。
+                // 计入这条日志可以直接区分「容器没尺寸」和「内容没尺寸」。
+                val v = lynxView
+                if (v != null) {
+                    log("   LynxView 尺寸: ${v.width}x${v.height} dp=${resources.displayMetrics.density}")
+                }
                 rendered = true
                 if (!selfTestMode) {
                     setStatus("✓ 渲染成功", ok = true)

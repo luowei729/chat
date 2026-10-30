@@ -174,50 +174,71 @@ export function App() {
   }, [auth.user?.id]);
 
   /* ---------------- 渲染 ---------------- */
+  let content;
+
   if (!auth.bootstrapped) {
-    return (
-      <view style={rootStyle}>
-        <view style={commonStyles.center}>
-          <text style={{ color: colors.textMuted, fontSize: fontSize.md }}>加载中…</text>
-        </view>
+    content = (
+      <view style={commonStyles.center}>
+        <text style={{ color: colors.textMuted, fontSize: fontSize.md }}>加载中…</text>
       </view>
     );
-  }
-
-  if (bootError) {
-    return (
-      <view style={rootStyle}>
-        <view style={commonStyles.center}>
-          <text style={{ color: colors.danger, fontSize: fontSize.md }}>{bootError}</text>
-        </view>
+  } else if (bootError) {
+    content = (
+      <view style={commonStyles.center}>
+        <text style={{ color: colors.danger, fontSize: fontSize.md }}>{bootError}</text>
       </view>
     );
+  } else {
+    content = renderRoute(route.name, route.params);
   }
 
-  return <view style={rootStyle}>{renderRoute(route.name, route.params)}</view>;
+  return (
+    <view style={rootStyle}>
+      {/*
+        SENTINEL：8px 可见性哨兵（临时，确认稳定后删除）
+        ----------------------------------------------------
+        看到这行红条 → Lynx 根容器已拿到非零尺寸，问题在页面内容
+        看不到红条   → 根容器高度依旧为 0，需要继续查尺寸链路
+        用固定高度块而不是 border，因为 0 高度元素的 border 会重叠
+        绘制出假阳性。
+      */}
+      <view style={sentinelStyle} />
+      {content}
+    </view>
+  );
 }
 
 /**
  * 根容器样式
  * ============================================================
- * 【重要】不要用 <page> 作根节点！
+ * 【两个致命坑，各自都会导致「onFirstScreen 成功但全屏空白」】
  *
- * LynxView 内部已经创建了 page 根节点，
- * 我们再嵌套一个 <page style={{height:'100%'}}> 时，
- * 它的高度没有参照父级（嵌套 page 不是全屏容器），
- * Yoga 算出高度为 0，导致整页内容不可见 = 纯黑屏，
- * 且不会抛任何错误（最难排查的一类问题）。
+ * 坑 1：用 height:'100%' 作根高度
+ *   LynxView 内部的 page 层高度并不总是确定值，
+ *   百分比高度在父级高度未定时会被 Yoga 算成 0。
+ *   结果是渲染树完整、onFirstScreen 正常触发、
+ *   回调全部成功——但画布上一个像素也没有。
+ *   必须用视口单位 100vh / 100vw（官方 hello-world 就是这么写的）。
  *
- * 官方 hello-world 的 <page> 是**不带任何样式**的，
- * 真正的全屏容器是内部 view（用 min-height:100vh 或 height:100%）。
+ * 坑 2：外层再包一个 <page>
+ *   LynxView 内部已经创建了 page 根节点，再嵌一层同样算出高度 0。
+ *   （本组件已避免，保留此注释防止回退）
  * ============================================================
  */
 const rootStyle = {
-  width: '100%',
-  height: '100%',
+  width: '100vw',
+  height: '100vh',
   backgroundColor: colors.bg,
   display: 'flex',
   flexDirection: 'column',
+} as const;
+
+/** SENTINEL：临时可见性哨兵，确认稳定后删除 */
+const sentinelStyle = {
+  width: '100%',
+  height: 8,
+  flexShrink: 0,
+  backgroundColor: '#FF0055',
 } as const;
 
 /** 路由 → 页面组件 */

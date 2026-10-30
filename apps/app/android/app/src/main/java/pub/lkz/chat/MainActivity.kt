@@ -3,11 +3,13 @@ package pub.lkz.chat
 import android.Manifest
 import android.content.pm.PackageManager
 import android.graphics.Color
+import android.graphics.Typeface
 import android.os.Build
 import android.os.Bundle
-import android.util.Log
 import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
+import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -18,63 +20,59 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.lynx.tasm.LynxView
 import com.lynx.tasm.LynxViewBuilder
+import com.lynx.tasm.LynxViewClient
 import com.lynx.tasm.ThreadStrategyForRendering
 import com.lynx.tasm.provider.AbsTemplateProvider
 import com.lynx.xelement.XElementBehaviors
-import pub.lkz.chat.module.ChatHostModule
 import java.io.IOException
 
 /**
  * ============================================================
- * 主界面：LynxView 宿主（带原生诊断面板）
+ * 主界面：LynxView 宿主 + 原生诊断条
  * ============================================================
- * 【为什么要诊断面板】
- * Lynx 渲染失败时不会抛异常，只留一片黑屏，
- * 而且我们看不到用户的设备日志。
+ * 【为什么这样设计】
+ * 之前连续多次「纯黑屏且没有任何提示」，原因是：
+ *   - Lynx 渲染失败不抛异常
+ *   - 诊断信息只靠 Logcat，用户无法提供
  *
- * 所以这里把「每一步的执行状态」用原生 TextView 直接画在屏幕上：
- *   - 如果连诊断面板都看不到 → Activity/窗口/主题层面的问题
- *   - 如果看到面板 → 直接知道卡在哪一步（bundle 读取/LynxView 创建/渲染）
- *   - Lynx 渲染成功后 1.5 秒自动隐藏面板，用户无感
+ * 现在把诊断做成**固定高度原生顶栏**（不是 weight 分配），
+ * 从物理上保证它不可能因为布局塌陷而消失：
+ *   LinearLayout(vertical)
+ *     ├── 诊断条（固定 150dp，绿色等宽字体，含版本号与按钮）
+ *     └── FrameLayout（weight=1，承载 LynxView）
  *
- * 这比让用户接 adb 抓日志快得多，也是定位「静默黑屏」最有效的手段。
+ * 判定逻辑：
+ *   - 能看到绿色文字        → 原生层正常，问题在 Lynx/bundle
+ *   - 连绿色文字都看不到    → Activity/主题/安装包层面的问题
+ *   - 看到 Lynx 内容        → onFirstScreen 触发后自动收起诊断条
+ *
+ * 版本标记 BUILD_TAG 会显示在顶栏，用来确认装的确实是新包。
  * ============================================================
  */
 class MainActivity : AppCompatActivity() {
 
     private var lynxView: LynxView? = null
 
-    /** 根容器：垂直排列「诊断面板 + LynxView」 */
     private lateinit var rootLayout: LinearLayout
-
-    /** LynxView 的承载容器（重试时清空重建） */
+    private lateinit var debugBar: LinearLayout
+    private lateinit var logView: TextView
+    private lateinit var statusView: TextView
     private lateinit var lynxContainer: FrameLayout
 
-    /** 诊断日志文本 */
-    private lateinit var diagText: TextView
-
-    /** 诊断面板容器（渲染成功后隐藏） */
-    private lateinit var diagPanel: ScrollView
-
-    /** 记录上次按返回键的时间，用于「双击退出」 */
     private var lastBackPressedAt: Long = 0
+
+    /** 是否已确认 Lynx 渲染成功（收到 onFirstScreen） */
+    private var rendered = false
+
+    /** 引擎自检模式：不自动收起诊断条，避免把结论一起藏掉 */
+    private var selfTestMode = false
 
     companion object {
         private const val TAG = "MainActivity"
-
-        /** bundle 文件名：CI 会把构建产物拷贝到 assets 下 */
         private const val BUNDLE_NAME = "chat.lynx.bundle"
-
-        /** 权限请求码 */
         private const val REQ_PERMISSIONS = 1001
-
-        /** 双击退出的时间窗口（毫秒） */
         private const val DOUBLE_BACK_INTERVAL = 2000L
 
-        /**
-         * 当前 Activity 实例
-         * 用途：原生模块（ChatHost.exitApp）需要拿到 Activity 才能 finish
-         */
         @Volatile
         var current: MainActivity? = null
             private set
@@ -88,125 +86,304 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         current = this
 
-        requestRuntimePermissions()
+        try {
+            main()
+        } catch (e: Throwable) {
+            // 兜底：连界面都构建失败时，直接展示异常文本
+            BootLog.e("MainActivity.onCreate 崩溃: ${e.javaClass.simpleName}: ${e.message}")
+            android.util.Log.e(TAG, "onCreate 崩溃", e)
+            showEmergencyScreen(e)
+        }
+    }
 
+    private fun main() {
+        requestRuntimePermissions()
         buildLayout()
 
-        log("=== chat 启动诊断 ===")
-        log("设备: ${Build.MANUFACTURER} ${Build.MODEL}")
-        log("Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
-        log("ABI: ${Build.SUPPORTED_ABIS.joinToString()}")
-        log("WebRTC: ${if (ChatApplication.webRtcReady) "就绪" else "未就绪"}")
-        log("")
-        log("开始加载 bundle: $BUNDLE_NAME")
+        BootLog.i("MainActivity 就绪，开始加载 $BUNDLE_NAME")
+        log("版本: ${ChatApplication.BUILD_TAG} · v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
+        log("包名: $packageName")
 
-        // 用官方推荐的线程策略加载；失败自动降级重试
         loadWithStrategy(ThreadStrategyForRendering.MOST_ON_TASM, attempt = 1)
     }
 
     /* ------------------------------------------------------------------ */
-    /* 布局：诊断面板 + LynxView                                            */
+    /* 布局                                                                 */
     /* ------------------------------------------------------------------ */
 
-    /**
-     * 构建界面
-     * ============================================================
-     * 结构：
-     *   LinearLayout(vertical)
-     *     ├── ScrollView  诊断面板（默认占 45% 高度，可滚动）
-     *     │     └── TextView 日志
-     *     └── FrameLayout LynxView 容器（flex:1）
-     *
-     * 为什么用原生布局而不是直接 setContentView(lynxView)：
-     * 需要一个「即使 Lynx 完全失败也能显示内容」的独立通道，
-     * 否则黑屏时我们什么都看不到，无法定位。
-     * ============================================================
-     */
     private fun buildLayout() {
         rootLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Color.parseColor("#070B14"))
         }
 
-        // ---------- 诊断面板 ----------
-        diagText = TextView(this).apply {
+        /* ---------- 诊断条（固定高度，绝不塌陷） ---------- */
+        debugBar = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.parseColor("#0E1A2E"))
+            setPadding(20, 14, 20, 10)
+        }
+
+        // 状态行：一眼看到结论
+        statusView = TextView(this).apply {
+            text = "${ChatApplication.BUILD_TAG} 启动中…"
+            setTextColor(Color.parseColor("#FFD166"))
+            textSize = 12f
+            typeface = Typeface.DEFAULT_BOLD
+        }
+        debugBar.addView(statusView)
+
+        // 日志区（可滚动）
+        logView = TextView(this).apply {
             setTextColor(Color.parseColor("#7CFFB2"))
-            textSize = 10.5f
-            setBackgroundColor(Color.parseColor("#101A2E"))
-            setPadding(24, 24, 24, 24)
-            typeface = android.graphics.Typeface.MONOSPACE
-            // 允许选中复制，方便用户反馈。
-            // 必须用 setTextIsSelectable()，Kotlin 里 isTextSelectable 是只读属性
+            textSize = 9.5f
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 8, 0, 0)
             setTextIsSelectable(true)
         }
-
-        diagPanel = ScrollView(this).apply {
-            addView(
-                diagText,
-                ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                ),
-            )
+        val logScroll = ScrollView(this).apply {
+            addView(logView, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         }
+        debugBar.addView(
+            logScroll,
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f),
+        )
 
+        // 按钮行
+        val buttonRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        buttonRow.addView(makeButton("重载 Lynx") { reloadLynx() })
+        buttonRow.addView(makeButton("换线程策略") { switchStrategyManually() })
+        buttonRow.addView(makeButton("引擎自检") { engineSelfTest() })
+        buttonRow.addView(makeButton("复制日志") { copyLog() })
+        buttonRow.addView(makeButton("收起") { collapseDebugBar() })
+        debugBar.addView(buttonRow)
+
+        // 固定 150dp：一定看得见
         rootLayout.addView(
-            diagPanel,
+            debugBar,
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                0,
-                0.45f, // 初始占 45%，渲染成功后隐藏
+                dp(150),
             ),
         )
 
-        // ---------- LynxView 容器 ----------
+        /* ---------- Lynx 容器 ---------- */
         lynxContainer = FrameLayout(this)
         rootLayout.addView(
             lynxContainer,
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                0,
-                0.55f,
-            ),
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f),
         )
 
         setContentView(rootLayout)
-    }
 
-    /** 追加一行诊断日志（同时输出到 Logcat） */
-    private fun log(msg: String) {
-        Log.i(TAG, msg)
-        runOnUiThread {
-            diagText.append("$msg\n")
-            diagPanel.post { diagPanel.fullScroll(ScrollView.FOCUS_DOWN) }
+        if (!ChatApplication.SHOW_DEBUG_BAR) {
+            debugBar.visibility = View.GONE
         }
     }
 
+    private fun makeButton(label: String, onClick: () -> Unit): Button =
+        Button(this).apply {
+            text = label
+            textSize = 10f
+            setTextColor(Color.parseColor("#9FD3FF"))
+            setBackgroundColor(Color.parseColor("#16274A"))
+            minWidth = 0
+            minimumWidth = 0
+            setPadding(18, 6, 18, 6)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                dp(34),
+            ).apply { marginEnd = dp(8) }
+            setOnClickListener { onClick() }
+        }
+
+    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+
     /* ------------------------------------------------------------------ */
-    /* 加载与重试                                                           */
+    /* 日志展示                                                             */
     /* ------------------------------------------------------------------ */
 
-    private fun loadWithStrategy(strategy: ThreadStrategyForRendering, attempt: Int) {
-        log("")
-        log("[第 $attempt 次] 线程策略 = $strategy")
-
-        // 清空上一次的视图
-        lynxContainer.removeAllViews()
-        lynxView?.let {
-            try {
-                it.destroy()
-            } catch (e: Throwable) {
-                Log.w(TAG, "销毁旧 LynxView 失败", e)
+    private fun log(msg: String) {
+        BootLog.i(msg)
+        runOnUiThread {
+            if (!this::logView.isInitialized) return@runOnUiThread
+            logView.text = BootLog.dump()
+            (logView.parent as? ScrollView)?.post {
+                (logView.parent as? ScrollView)?.fullScroll(ScrollView.FOCUS_DOWN)
             }
+        }
+    }
+
+    private fun setStatus(msg: String, ok: Boolean? = null) {
+        runOnUiThread {
+            if (!this::statusView.isInitialized) return@runOnUiThread
+            statusView.text = msg
+            statusView.setTextColor(
+                when (ok) {
+                    true -> Color.parseColor("#34D399")
+                    false -> Color.parseColor("#FF6B6B")
+                    else -> Color.parseColor("#FFD166")
+                },
+            )
+        }
+    }
+
+    private fun collapseDebugBar() {
+        runOnUiThread {
+            debugBar.visibility = View.GONE
+            Toast.makeText(this, "诊断条已收起，长按屏幕顶部可再打开", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun copyLog() {
+        val text = buildString {
+            append("BUILD=${ChatApplication.BUILD_TAG}\n")
+            append("version=${BuildConfig.VERSION_NAME}(${BuildConfig.VERSION_CODE})\n")
+            append(BootLog.dump())
+        }
+        val cm = getSystemService(android.content.ClipboardManager::class.java)
+        cm?.setPrimaryClip(android.content.ClipData.newPlainText("chat-log", text))
+        Toast.makeText(this, "日志已复制到剪贴板", Toast.LENGTH_SHORT).show()
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* 加载 Lynx                                                            */
+    /* ------------------------------------------------------------------ */
+
+    /** 当前使用的线程策略（手动切换用） */
+    private var currentStrategy = ThreadStrategyForRendering.MOST_ON_TASM
+
+    private fun switchStrategyManually() {
+        currentStrategy = if (currentStrategy == ThreadStrategyForRendering.MOST_ON_TASM) {
+            ThreadStrategyForRendering.ALL_ON_UI
+        } else {
+            ThreadStrategyForRendering.MOST_ON_TASM
+        }
+        reloadLynx()
+    }
+
+    private fun reloadLynx() {
+        rendered = false
+        selfTestMode = false
+        loadWithStrategy(currentStrategy, attempt = 1)
+    }
+
+    /**
+     * 引擎自检：绕开我们自己的 bundle，直接渲染一段内置 JSON 模板
+     * ============================================================
+     * 这是唯一能区分下面两种情况的手段：
+     *   A. 出现粉红色方块 → Lynx 引擎、渲染管线、Surface 全部正常，
+     *      问题 100% 在我们的 .lynx.bundle（版本不匹配 / 模板损坏）
+     *   B. 依旧空白   → Lynx 引擎在这个设备上根本跑不起来
+     *      （so 未加载 / GPU 不支持 / 被系统限制），
+     *      这时换任何 bundle 都不可能显示
+     * ============================================================
+     */
+    private fun engineSelfTest() {
+        setStatus("${ChatApplication.BUILD_TAG} 引擎自检中…")
+        log("---- 引擎自检：渲染内置 JSON 模板 ----")
+
+        lynxContainer.removeAllViews()
+        try {
+            lynxView?.destroy()
+        } catch (e: Throwable) {
+            android.util.Log.w(TAG, "销毁旧 LynxView 失败", e)
+        }
+        lynxView = null
+        rendered = false
+        selfTestMode = true
+
+        val view = try {
+            createLynxView(ThreadStrategyForRendering.ALL_ON_UI)
+        } catch (e: Throwable) {
+            log("✗ 自检创建 LynxView 失败: ${e.message}")
+            setStatus("✗ 引擎自检失败（无法创建 LynxView）", ok = false)
+            return
+        }
+        lynxView = view
+        lynxContainer.addView(
+            view,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT,
+            ),
+        )
+
+        // 最小 JSON 模板 AST：一个整宽粉色块 + 一行白字
+        val json = """
+            {
+              "type": "view",
+              "style": {
+                "width": "100%",
+                "height": "400px",
+                "background-color": "#FF0055",
+                "flex-direction": "column",
+                "justify-content": "center",
+                "align-items": "center"
+              },
+              "children": [
+                {
+                  "type": "text",
+                  "style": { "color": "#FFFFFF", "font-size": "28px" },
+                  "values": [ { "type": "raw-text", "text": "LYNX ENGINE OK" } ]
+                }
+              ]
+            }
+        """.trimIndent()
+
+        try {
+            view.renderTemplate(
+                json.toByteArray(Charsets.UTF_8),
+                com.lynx.tasm.TemplateData.empty(),
+            )
+            log("✓ renderTemplate(json) 已调用")
+        } catch (e: Throwable) {
+            log("✗ renderTemplate(json) 异常: ${e.javaClass.simpleName}: ${e.message}")
+            setStatus("✗ 引擎自检失败（JSON 模板被拒绝）", ok = false)
+            return
+        }
+
+        // 自检专用判定：不再自动收起诊断条
+        view.postDelayed({
+            if (rendered) {
+                log("✓✓ 自检成功：粉红色块出现说明 Lynx 引擎正常")
+                setStatus("✓ 引擎正常 —— 问题在 chat.lynx.bundle", ok = true)
+            } else {
+                log("✗✗ 自检失败：连内置 JSON 模板都没有渲染")
+                setStatus("✗ 引擎异常 —— 与 bundle 无关", ok = false)
+            }
+        }, 6000)
+    }
+
+    /**
+     * 加载 LynxView，并由 LynxViewClient 回调判定结果
+     * ============================================================
+     * 用 onFirstScreen / onLoadSuccess / onLoadFailed 作为权威信号，
+     * 比 childCount 判断可靠得多（childCount 在异步渲染时会有假阴性）。
+     * ============================================================
+     */
+    private fun loadWithStrategy(strategy: ThreadStrategyForRendering, attempt: Int) {
+        currentStrategy = strategy
+        setStatus("${ChatApplication.BUILD_TAG} 加载中… (第 $attempt 次 · $strategy)")
+        log("---- 第 $attempt 次加载 · 策略=$strategy ----")
+
+        // 清理上一次
+        lynxContainer.removeAllViews()
+        try {
+            lynxView?.destroy()
+        } catch (e: Throwable) {
+            android.util.Log.w(TAG, "销毁旧 LynxView 失败", e)
         }
         lynxView = null
 
-        // ---------- 创建 LynxView ----------
         val view = try {
             createLynxView(strategy)
         } catch (e: Throwable) {
             log("✗ 创建 LynxView 异常: ${e.javaClass.simpleName}: ${e.message}")
-            Log.e(TAG, "创建 LynxView 失败", e)
+            setStatus("✗ 创建 LynxView 失败", ok = false)
             if (attempt == 1) {
                 loadWithStrategy(ThreadStrategyForRendering.ALL_ON_UI, 2)
             }
@@ -223,70 +400,38 @@ class MainActivity : AppCompatActivity() {
                 FrameLayout.LayoutParams.MATCH_PARENT,
             ),
         )
-        log("✓ 已挂载到容器")
 
-        // ---------- 渲染 ----------
         try {
             view.renderTemplateUrl(BUNDLE_NAME, "")
             log("✓ renderTemplateUrl 已调用")
         } catch (e: Throwable) {
             log("✗ renderTemplateUrl 异常: ${e.javaClass.simpleName}: ${e.message}")
-            Log.e(TAG, "渲染失败", e)
         }
 
-        // ---------- 渲染结果检查 ----------
+        // 兜底检查：8 秒后仍未收到 onFirstScreen 则视为失败
         view.postDelayed({
+            if (rendered) return@postDelayed
             val w = view.width
             val h = view.height
             val children = view.childCount
-            log("检查: 尺寸=${w}x$h, 子视图=$children")
+            log("8s 未收到 onFirstScreen：尺寸=${w}x$h 子视图=$children")
 
-            val ok = children > 0 && w > 0 && h > 0
-            if (ok) {
-                log("✓ 渲染成功，隐藏诊断面板")
-                hideDiagPanel()
-            } else if (attempt == 1) {
-                log("✗ 未渲染出内容，换 ALL_ON_UI 重试")
+            if (attempt == 1) {
+                log("→ 自动切换 ALL_ON_UI 重试")
                 loadWithStrategy(ThreadStrategyForRendering.ALL_ON_UI, 2)
             } else {
-                log("")
-                log("=== 两种策略均失败 ===")
-                log("请截图本页反馈给开发者")
-                showFatalError(
-                    "渲染失败\n尺寸=${w}x$h 子视图=$children\n请截图上方日志反馈",
-                )
+                setStatus("✗ 两种策略均未渲染，请点「复制日志」反馈", ok = false)
             }
-        }, 2500)
-    }
-
-    /**
-     * 渲染成功后收起诊断面板，把空间让给 Lynx 界面
-     */
-    private fun hideDiagPanel() {
-        runOnUiThread {
-            try {
-                val params = diagPanel.layoutParams as LinearLayout.LayoutParams
-                params.height = 0
-                params.weight = 0f
-                diagPanel.layoutParams = params
-                diagPanel.visibility = android.view.View.GONE
-
-                val lynxParams = lynxContainer.layoutParams as LinearLayout.LayoutParams
-                lynxParams.weight = 1f
-                lynxContainer.layoutParams = lynxParams
-            } catch (e: Throwable) {
-                Log.w(TAG, "隐藏诊断面板失败", e)
-            }
-        }
+        }, 8000)
     }
 
     /**
      * 创建 LynxView
      * ============================================================
-     * 关键点：
      * - addBehaviors(XElementBehaviors)：注册 input/webview/video 等原生组件
      * - setThreadStrategyForRendering：ReactLynx 必须用多线程策略
      * - setTemplateProvider：从 assets 读取离线 bundle
+     * - addLynxViewClient：接收渲染成功/失败回调（权威信号）
      * ============================================================
      */
     private fun createLynxView(strategy: ThreadStrategyForRendering): LynxView {
@@ -304,47 +449,76 @@ class MainActivity : AppCompatActivity() {
                         callback.onSuccess(bytes)
                     } catch (e: IOException) {
                         log("✗ bundle 读取失败: ${e.message}")
-                        Log.e(TAG, "读取 bundle 失败", e)
                         callback.onFailed(e.message ?: "读取 bundle 失败")
                     }
                 }.start()
             }
         })
 
-        return builder.build(this)
+        val view = builder.build(this)
+
+        // 权威回调
+        view.addLynxViewClient(object : LynxViewClient() {
+            override fun onPageStart(url: String?) {
+                log("→ onPageStart")
+            }
+
+            override fun onLoadSuccess() {
+                log("✓ onLoadSuccess（模板解析成功）")
+                setStatus("${ChatApplication.BUILD_TAG} 模板加载成功，渲染中…")
+            }
+
+            override fun onRuntimeReady() {
+                log("✓ onRuntimeReady（JS 运行时就绪）")
+            }
+
+            override fun onFirstScreen() {
+                log("✓ onFirstScreen（首屏渲染完成）")
+                rendered = true
+                if (!selfTestMode) {
+                    setStatus("✓ 渲染成功", ok = true)
+                    // 渲染成功 1 秒后收起诊断条，让出屏幕
+                    runOnUiThread {
+                        statusView.postDelayed({ if (rendered && !selfTestMode) collapseDebugBar() }, 1000)
+                    }
+                    BootLog.markSessionOk()
+                }
+            }
+
+            override fun onLoadFailed(error: String?) {
+                log("✗ onLoadFailed: $error")
+                setStatus("✗ 加载失败: $error", ok = false)
+            }
+        })
+
+        return view
     }
 
     /* ------------------------------------------------------------------ */
-    /* 错误展示                                                             */
+    /* 兜底界面                                                             */
     /* ------------------------------------------------------------------ */
 
-    /**
-     * 在 LynxView 之上叠加错误信息
-     * 说明：即使 Lynx 完全黑屏，这段红字也应该可见；
-     *      如果连红字都看不到，说明是窗口/主题层面的问题。
-     */
-    private fun showFatalError(message: String) {
-        runOnUiThread {
-            try {
-                val tv = TextView(this).apply {
-                    text = message
-                    setTextColor(Color.parseColor("#FF6B6B"))
-                    textSize = 13f
-                    gravity = Gravity.CENTER
-                    setPadding(40, 40, 40, 40)
-                    setBackgroundColor(Color.parseColor("#1A0F14"))
+    /** onCreate 整体崩溃时的最后一道防线 */
+    private fun showEmergencyScreen(e: Throwable) {
+        try {
+            val tv = TextView(this).apply {
+                text = buildString {
+                    append("chat 启动失败\n\n")
+                    append("${e.javaClass.simpleName}: ${e.message}\n\n")
+                    append(e.stackTraceToString().lineSequence().take(20).joinToString("\n"))
                 }
-                lynxContainer.addView(
-                    tv,
-                    FrameLayout.LayoutParams(
-                        FrameLayout.LayoutParams.MATCH_PARENT,
-                        FrameLayout.LayoutParams.WRAP_CONTENT,
-                        Gravity.CENTER,
-                    ),
-                )
-            } catch (e: Throwable) {
-                Log.e(TAG, "展示错误信息失败", e)
+                setTextColor(Color.parseColor("#FF6B6B"))
+                setBackgroundColor(Color.BLACK)
+                textSize = 10f
+                typeface = Typeface.MONOSPACE
+                setPadding(30, 60, 30, 30)
+                setTextIsSelectable(true)
             }
+            setContentView(
+                ScrollView(this).apply { addView(tv) },
+            )
+        } catch (ignored: Throwable) {
+            android.util.Log.e(TAG, "连兜底界面都无法显示", ignored)
         }
     }
 
@@ -383,14 +557,10 @@ class MainActivity : AppCompatActivity() {
 
     @Deprecated("Android 13+ 推荐用 OnBackPressedDispatcher")
     override fun onBackPressed() {
-        val view = lynxView
-        if (view != null && ChatHostModule.isCanGoBack()) {
-            try {
-                view.sendGlobalEvent("hardwareBack", com.lynx.react.bridge.JavaOnlyArray())
-                return
-            } catch (e: Throwable) {
-                Log.w(TAG, "发送返回事件失败", e)
-            }
+        // 诊断条收起时，先按返回恢复它（方便再次排查）
+        if (this::debugBar.isInitialized && debugBar.visibility != View.VISIBLE) {
+            debugBar.visibility = View.VISIBLE
+            return
         }
 
         val now = System.currentTimeMillis()
@@ -407,7 +577,7 @@ class MainActivity : AppCompatActivity() {
         try {
             lynxView?.onEnterBackground()
         } catch (e: Throwable) {
-            Log.w(TAG, "onEnterBackground 失败", e)
+            android.util.Log.w(TAG, "onEnterBackground 失败", e)
         }
     }
 
@@ -416,7 +586,7 @@ class MainActivity : AppCompatActivity() {
         try {
             lynxView?.onEnterForeground()
         } catch (e: Throwable) {
-            Log.w(TAG, "onEnterForeground 失败", e)
+            android.util.Log.w(TAG, "onEnterForeground 失败", e)
         }
     }
 
@@ -424,7 +594,7 @@ class MainActivity : AppCompatActivity() {
         try {
             lynxView?.destroy()
         } catch (e: Throwable) {
-            Log.w(TAG, "destroy 失败", e)
+            android.util.Log.w(TAG, "destroy 失败", e)
         }
         lynxView = null
         if (current === this) current = null

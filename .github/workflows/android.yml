@@ -72,42 +72,31 @@ jobs:
       - name: 构建 Lynx 客户端包
         run: pnpm --filter @chat/app build
 
-      # ---------- 2. 拷贝 bundle 到 Android assets ----------
-      - name: 拷贝 Lynx bundle 到 assets
+      # ---------- 2. 拷贝 bundle 到 Android assets 并硬校验 ----------
+      # 历史教训：出现过两次「构建成功但真机纯黑屏」——
+      #   1. 缺少 pluginReactLynx → 产物是 webpack JS 而非 Lynx 模板
+      #   2. 入口引用了别的组件 → bundle 里没有真实 UI
+      # 这两类问题构建阶段都不报错，只有真机才暴露，且黑屏无任何提示。
+      # 所以必须在这里硬校验，校验逻辑集中在 scripts/verify-bundle.mjs，
+      # 本地可用同一条命令复现（npm run verify:bundle）。
+      - name: 拷贝并校验 Lynx bundle
         run: |
           set -euo pipefail
           ASSETS_DIR="apps/app/android/app/src/main/assets"
           mkdir -p "$ASSETS_DIR"
 
-          # Rspeedy 0.18 的产物是 JS bundle（webpack 格式），
-          # 文件名形如 dist/static/js/main.<hash>.js。
-          # 它本身就是合法的 Lynx bundle，TemplateProvider 只读字节流，
-          # 扩展名不影响加载，所以这里统一重命名为 chat.lynx.bundle。
-          BUNDLE=""
-
-          # 优先找显式的 .lynx.bundle（未来 Rspeedy 版本可能改回）
+          BUNDLE=$(find apps/app/dist -name "*.lynx.bundle" -type f 2>/dev/null | head -1)
           if [ -z "$BUNDLE" ]; then
-            BUNDLE=$(find apps/app/dist -name "*.lynx.bundle" -type f 2>/dev/null | head -1)
-          fi
-
-          # 其次找主入口 JS（排除 chunk-* 之类的分包）
-          if [ -z "$BUNDLE" ]; then
-            BUNDLE=$(find apps/app/dist -name "main*.js" -type f 2>/dev/null | head -1)
-          fi
-
-          # 最后兜底：取 dist 下最大的 js 文件（主包通常最大）
-          if [ -z "$BUNDLE" ]; then
-            BUNDLE=$(find apps/app/dist -name "*.js" -type f -printf '%s %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
-          fi
-
-          if [ -z "$BUNDLE" ]; then
-            echo "::error::未找到 Lynx bundle，构建失败"
-            echo "=== dist 内容 ==="
+            echo "::error::未找到 .lynx.bundle 产物（pluginLynx 未生效？）"
             find apps/app/dist -type f | head -20
             exit 1
           fi
 
-          echo "找到 bundle: $BUNDLE ($(du -h "$BUNDLE" | cut -f1))"
+          # 结构校验 + 关键 UI 文本校验
+          # 这些文本只存在于真实登录页，缺失即说明入口组件没编译进去
+          node apps/app/scripts/verify-bundle.mjs "$BUNDLE" \
+            "注册新账号" "忘记密码" "安全 · 快速 · 跨平台聊天"
+
           cp "$BUNDLE" "$ASSETS_DIR/chat.lynx.bundle"
           echo "=== assets 内容 ==="
           ls -lh "$ASSETS_DIR/"

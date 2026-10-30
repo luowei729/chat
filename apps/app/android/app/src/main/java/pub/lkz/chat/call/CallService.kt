@@ -46,15 +46,26 @@ class CallService : Service() {
          */
         private const val TYPE_MICROPHONE = 0x00000080
 
-        /** 通话开始：启动前台服务 */
-        fun start(context: Context) {
-            val intent = Intent(context, CallService::class.java)
+        /**
+         * 通话开始：启动前台服务
+         * @param peerName 对方昵称，直接显示在通知标题上
+         *                 （通知栏能看出「和谁在通话」比只写「正在通话」有用得多）
+         */
+        fun start(context: Context, peerName: String = "") {
+            val intent = Intent(context, CallService::class.java).apply {
+                putExtra(EXTRA_PEER, peerName)
+            }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
             } else {
                 context.startService(intent)
             }
         }
+
+        private const val EXTRA_PEER = "peer_name"
+
+        /** 当前通话对方（跨 startCommand 传递） */
+        private var currentPeer: String = ""
 
         /** 通话结束：停止服务 */
         fun stop(context: Context) {
@@ -70,6 +81,8 @@ class CallService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        intent?.getStringExtra(EXTRA_PEER)?.let { if (it.isNotEmpty()) currentPeer = it }
+
         // 必须在 5 秒内调用 startForeground，否则系统抛 ANR
         val notification = buildNotification()
 
@@ -120,8 +133,8 @@ class CallService : Service() {
         )
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("正在通话")
-            .setContentText("点击返回通话界面")
+            .setContentTitle(if (currentPeer.isEmpty()) "正在通话" else "与 ${currentPeer} 通话中")
+            .setContentText("后台通话中 · 点击返回")
             .setSmallIcon(R.drawable.ic_call)
             .setContentIntent(contentIntent)
             .setOngoing(true)

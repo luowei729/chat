@@ -49,6 +49,13 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!--
+      通话悬浮窗：通话中切到后台时显示小窗（微信式）
+      这是特殊权限，只能引导用户去系统设置授权，
+      没有运行时申请接口；未授权时悬浮窗自动降级为不可用。
+    -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
     <!-- 摄像头非必需，允许无摄像头设备安装 -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.microphone" android:required="true" />

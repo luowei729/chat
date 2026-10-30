@@ -210,7 +210,7 @@ export async function syncSince(userId: string, since: number): Promise<SyncResu
   }
 
   // 批量取各会话最后一条消息（每个会话一条，用窗口函数一次拿完）
-  const lastMessageMap = await loadLastMessages(activeIds);
+  const lastMessageMap = await loadLastMessages(activeIds, userId);
 
   // 成员数：一次聚合查出，避免逐会话 count
   const countMap = await loadMemberCounts(activeIds);

@@ -188,7 +188,26 @@ class ChatMediaModule : LynxModule {
             MediaBridge.fail(callback, "缺少上传参数")
             return
         }
-        UploadHelper.upload(optsJson)
+        // 进度回调：同一个 callback 多次 invoke，JS 侧按字段区分
+        // {progress:0.x} 是进度，{ok:true/false} 是最终结果。
+        // Lynx 的 Callback 支持多次调用，JS 端用回调式 API 接收。
+        val onProgress: (Double) -> Unit = { p ->
+            try {
+                callback.invoke(
+                    JavaOnlyMap.from(
+                        mapOf(
+                            "progress" to p,
+                            "ok" to false,
+                            "pending" to true,
+                        ),
+                    ),
+                )
+            } catch (_: Throwable) {
+                // JS 侧已销毁（用户退出会话），忽略
+            }
+        }
+
+        UploadHelper.upload(optsJson, onProgress)
             .onSuccess { (status, body) ->
                 MediaBridge.ok(
                     callback,

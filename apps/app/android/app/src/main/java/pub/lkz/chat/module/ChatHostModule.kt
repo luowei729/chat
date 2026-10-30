@@ -8,6 +8,7 @@ import com.lynx.react.bridge.JavaOnlyMap
 import pub.lkz.chat.ChatApplication
 import pub.lkz.chat.MainActivity
 import pub.lkz.chat.call.CallService
+import pub.lkz.chat.call.FloatingCallWindow
 
 /**
  * ============================================================
@@ -54,6 +55,30 @@ class ChatHostModule : LynxModule {
 
         /** 查询是否可返回（供 MainActivity 使用） */
         fun isCanGoBack(): Boolean = canGoBack
+
+        /**
+         * 是否正在通话中
+         * ------------------------------------------------------------
+         * MainActivity 在 onStop 时据此决定要不要弹悬浮窗，
+         * 在 onResume 时据此隐藏。必须由前端显式置位，
+         * 因为原生无法感知 WebRTC 的会话状态。
+         */
+        @Volatile
+        private var inCall: Boolean = false
+
+        fun isInCall(): Boolean = inCall
+
+        /** 当前通话对方昵称，悬浮窗标题用 */
+        @Volatile
+        private var peerName: String = "通话中"
+
+        fun peerNameOf(): String = peerName
+
+        /** 通话开始时间戳，悬浮窗计时用 */
+        @Volatile
+        private var callStartedAt: Long = 0L
+
+        fun callStartedAtOf(): Long = callStartedAt
     }
 
     /**
@@ -94,6 +119,101 @@ class ChatHostModule : LynxModule {
     fun stopCallService() {
         val ctx = mContext ?: return
         CallService.stop(ctx)
+    }
+
+    /**
+     * 标记通话状态并启动/停止后台保活
+     * ------------------------------------------------------------
+     * @param active true=通话开始（启动前台服务 + 允许后续弹悬浮窗）
+     *               false=通话结束（停服务 + 隐藏悬浮窗）
+     * @param peerName 对方昵称，用于通知与悬浮窗
+     */
+    @LynxMethod
+    fun setCallState(active: Boolean, name: String) {
+        inCall = active
+        callStartedAt = if (active) System.currentTimeMillis() else 0L
+
+        val ctx = mContext ?: return
+        if (active) {
+            peerName = name.ifEmpty { "通话中" }
+            // 前台服务：锁屏后保持麦克风与网络
+            try {
+                CallService.start(ctx, peerName)
+            } catch (_: Throwable) {
+                // 没有通知权限时启动失败也不影响通话本身
+            }
+            // 提前申请悬浮窗权限（用户首次通话时弹系统设置页）
+            if (!FloatingCallWindow.canDraw(ctx)) {
+                FloatingCallWindow.requestPermission(ctx)
+            }
+        } else {
+            FloatingCallWindow.hide()
+            try {
+                CallService.stop(ctx)
+            } catch (_: Throwable) {
+            }
+        }
+    }
+
+    /** 悬浮窗权限是否已授予 */
+    @LynxMethod
+    fun hasOverlayPermission(callback: Callback) {
+        val ctx = mContext ?: run {
+            callback.invoke(false)
+            return
+        }
+        callback.invoke(FloatingCallWindow.canDraw(ctx))
+    }
+
+    /** 跳系统设置页申请悬浮窗权限 */
+    @LynxMethod
+    fun requestOverlayPermission() {
+        val ctx = mContext ?: return
+        FloatingCallWindow.requestPermission(ctx)
+    }
+
+    /** 手动显示悬浮窗（通话中切后台可由前端主动调用） */
+    @LynxMethod
+    fun showFloatingCall() {
+        val ctx = mContext ?: return
+        if (!inCall) return
+        FloatingCallWindow.show(ctx, peerName, callStartedAt)
+    }
+
+    /** 隐藏悬浮窗 */
+    @LynxMethod
+    fun hideFloatingCall() {
+        FloatingCallWindow.hide()
+    }
+
+    /**
+     * 最小化到后台（不退出进程）
+     * 供前端「返回」逻辑或悬浮窗按钮调用。
+     */
+    @LynxMethod
+    fun moveTaskToBack() {
+        val activity = MainActivity.current ?: return
+        activity.runOnUiThread { activity.moveTaskToBack(true) }
+    }
+
+    /**
+     * 悬浮窗挂断按钮的落点
+     * 前端注册后，点小窗的挂断会回调到这里再转给 JS 结束通话。
+     */
+    @LynxMethod
+    fun setFloatingHangupHandler(handler: Any?) {
+        // Lynx 不能直接传函数，这里用「置位」语义：
+        // 挂断时发全局事件 call.hangup，前端监听后自行 stopCall。
+        FloatingCallWindow.onHangup = {
+            val activity = MainActivity.current
+            try {
+                activity?.lynxViewForEvent()?.sendGlobalEvent(
+                    "callHangup",
+                    com.lynx.react.bridge.JavaOnlyArray(),
+                )
+            } catch (_: Throwable) {
+            }
+        }
     }
 
     /**

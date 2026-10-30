@@ -17,6 +17,7 @@
  */
 
 import { useEffect, useRef, useState } from '@lynx-js/react';
+import { moveTaskToBack, prepareCallBackground, setCallState } from '../platform/host.js';
 import { getIceConfig } from '../api/index.js';
 import * as ws from '../api/ws.js';
 import { pop } from '../router.js';
@@ -76,6 +77,8 @@ export function CallPage(props: {
       if (msg.status === 'active') {
         setPhase('active');
 
+
+
         /**
          * Mesh 拓扑维护：
          * 收到 joinedUserId 说明有人刚加入。
@@ -92,6 +95,8 @@ export function CallPage(props: {
 
       if (msg.status === 'ended' || msg.status === 'rejected' || msg.status === 'missed') {
         setPhase('ended');
+        // 停前台服务 + 隐藏悬浮窗，否则通知栏会残留
+        setCallState(false, '');
         stopCall();
         // 1.5 秒后自动返回，让用户看到「通话已结束」
         setTimeout(() => pop(), 1500);
@@ -161,6 +166,7 @@ export function CallPage(props: {
   /* ---------------- 拒接 ---------------- */
   const handleReject = () => {
     ws.rejectCall(callId);
+    setCallState(false, '');
     stopCall();
     pop();
   };
@@ -168,8 +174,42 @@ export function CallPage(props: {
   /* ---------------- 挂断 ---------------- */
   const handleHangup = () => {
     ws.hangupCall(callId);
+    setCallState(false, '');
     stopCall();
     pop();
+  };
+
+  /* ---------------- 后台通话与悬浮窗 ---------------- */
+  /**
+   * 生命周期与后台能力的绑定
+   * ============================================================
+   * 规则：
+   *   外呼中（ringing + 非来电）→ 开启后台（用户可能边拨号边切走）
+   *   已接通（active）          → 开启后台
+   *   来电响铃（ringing + 来电）→ 不开（还没接，不该占麦克风与通知栏）
+   *   已结束（ended）           → 关闭并清理
+   *
+   * 放在 effect 里而不是各处分散调用，是为了保证「任何一个
+   * 状态跳转」都会执行到对应分支，不会漏掉清理。
+   */
+  useEffect(() => {
+    if (phase === 'active' || (phase === 'ringing' && !incoming)) {
+      prepareCallBackground(callerName ?? '通话中');
+    } else if (phase === 'ended') {
+      setCallState(false, '');
+    }
+  }, [phase, incoming, callerName]);
+
+  /* ---------------- 最小化到悬浮窗 ---------------- */
+  /**
+   * 主动最小化
+   * ------------------------------------------------------------
+   * 与「按 Home 键」等价，但更明确：用户点一下就把 App 收到后台，
+   * 通话继续、悬浮窗自动出现（MainActivity.onStop 触发）。
+   * 这样用户即使在通话页也知道怎么边聊边看别的东西。
+   */
+  const handleMinimize = () => {
+    moveTaskToBack();
   };
 
   /* ---------------- 静音切换 ---------------- */
@@ -180,7 +220,15 @@ export function CallPage(props: {
   /* ---------------- 卸载时清理 ---------------- */
   useEffect(() => {
     return () => {
-      // 页面被销毁（用户返回）时必须释放麦克风
+      /**
+       * 页面销毁时的清理
+       * ------------------------------------------------
+       * 注意：这里**不能**条件式跳过 setCallState(false)。
+       * 用户可能通过右滑返回、系统返回键、悬浮窗挂断等多种
+       * 路径离开，任何一条漏掉清理都会导致前台服务残留、
+       * 通知栏常驻、麦克风被长期占用。
+       */
+      setCallState(false, '');
       stopCall();
     };
   }, []);
@@ -299,6 +347,12 @@ export function CallPage(props: {
               action="mute"
               muted={engine.muted}
             />
+            <CircleButton
+              label="最小化"
+              color={colors.surfaceAlt}
+              onTap={handleMinimize}
+              action="minimize"
+            />
             <CircleButton label="挂断" color={colors.danger} onTap={handleHangup} action="hangup" />
           </>
         )}
@@ -369,8 +423,8 @@ function ParticipantTile(props: {
 function CircleButton(props: {
   label: string;
   color: string;
-  /** 图标语义：接听 / 挂断 / 静音 */
-  action: 'accept' | 'hangup' | 'mute';
+  /** 图标语义：接听 / 挂断 / 静音 / 最小化 */
+  action: 'accept' | 'hangup' | 'mute' | 'minimize';
   /** true = 静音态（麦克风 + 斜杠） */
   muted?: boolean;
   onTap: () => void;
@@ -398,6 +452,44 @@ function CircleButton(props: {
           {action === 'mute' ? <IconMic size={22} color="#FFFFFF" /> : null}
           {action === 'accept' ? <IconCheck size={22} color="#FFFFFF" /> : null}
           {action === 'hangup' ? <IconClose size={22} color="#FFFFFF" /> : null}
+          {/* 最小化：向下的箭头落到横线（"收起到后台"的通用语汇） */}
+          {action === 'minimize' ? (
+            <>
+              <view
+                style={{
+                  position: 'absolute',
+                  left: '8px',
+                  top: '4px',
+                  width: '2px',
+                  height: '12px',
+                  backgroundColor: '#FFFFFF',
+                  borderRadius: '1px',
+                }}
+              />
+              <view
+                style={{
+                  position: 'absolute',
+                  left: '4px',
+                  top: '12px',
+                  width: '10px',
+                  height: '2px',
+                  backgroundColor: '#FFFFFF',
+                  borderRadius: '1px',
+                }}
+              />
+              <view
+                style={{
+                  position: 'absolute',
+                  left: '2px',
+                  top: '18px',
+                  width: '18px',
+                  height: '2px',
+                  backgroundColor: '#FFFFFF',
+                  borderRadius: '1px',
+                }}
+              />
+            </>
+          ) : null}
 
           {action === 'mute' && muted ? (
             /* 静音斜杠：45° 细线，覆盖在麦克风上 */

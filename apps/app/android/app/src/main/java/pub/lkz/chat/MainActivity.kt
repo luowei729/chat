@@ -616,18 +616,61 @@ class MainActivity : AppCompatActivity() {
         pub.lkz.chat.media.MediaBridge.handleActivityResult(requestCode, resultCode, data)
     }
 
+    /**
+     * 返回键
+     * ------------------------------------------------------------
+     * 语义（对齐主流 IM）：
+     *   有上一页  → 通知前端 pop（前端负责真正的路由退栈）
+     *   已在根页  → **最小化到后台**，绝不退出进程
+     *
+     * 为什么不能直接 finish()：
+     * 退出会销毁 LynxView，丢掉全部内存态（会话列表、连接、
+     * 草稿），下次打开要重新冷启动 + 重连 WS，体验很差。
+     * moveTaskToBack 只是把任务挪到后台，进程与 Lynx 实例都保留，
+     * 再次点图标是秒开。
+     *
+     * 前端如何收到：
+     *   state.stack.length > 1 时前端会调 ChatHost.setCanGoBack(true)，
+     *   原生据此发全局事件 backPressed，前端监听后执行 pop。
+     */
     @Deprecated("Android 13+ 推荐用 OnBackPressedDispatcher")
     override fun onBackPressed() {
-        // 诊断条已收起时，不再因为按返回键而重新弹出 ——
-        // 那会让正常使用（返回上一页）被诊断条打断，
-        // 而且会挤压 Lynx 页面布局。排查时用 BUILD_TAG 判断版本即可。
-        val now = System.currentTimeMillis()
-        if (now - lastBackPressedAt < DOUBLE_BACK_INTERVAL) {
-            finishAffinity()
+        if (pub.lkz.chat.module.ChatHostModule.isCanGoBack()) {
+            // 让前端退栈；前端 pop 后会再次同步 setCanGoBack(false)
+            try {
+                lynxView?.sendGlobalEvent("backPressed", com.lynx.react.bridge.JavaOnlyArray())
+            } catch (e: Throwable) {
+                android.util.Log.w(TAG, "发送 backPressed 失败", e)
+            }
             return
         }
-        lastBackPressedAt = now
-        Toast.makeText(this, "再按一次退出", Toast.LENGTH_SHORT).show()
+
+        // 根页面：最小化，不退出
+        moveTaskToBack(true)
+    }
+
+    /** 供 ChatHostModule 发全局事件（悬浮窗挂断等） */
+    fun lynxViewForEvent(): LynxView? = lynxView
+
+    override fun onStop() {
+        super.onStop()
+        /**
+         * 通话中退到后台 → 弹悬浮窗
+         * ------------------------------------------------
+         * 判据用 isChangingConfigurations()：
+         * 屏幕旋转等活动重建不应弹窗，否则会闪一下。
+         * 是否真的在通话由前端 setCallState 置位，
+         * 原生无法自行感知 WebRTC 状态。
+         */
+        if (!isChangingConfigurations &&
+            pub.lkz.chat.module.ChatHostModule.isInCall()
+        ) {
+            pub.lkz.chat.call.FloatingCallWindow.show(
+                applicationContext,
+                pub.lkz.chat.module.ChatHostModule.peerNameOf(),
+                pub.lkz.chat.module.ChatHostModule.callStartedAtOf(),
+            )
+        }
     }
 
     override fun onPause() {
@@ -641,6 +684,11 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        // 回到 App：隐藏悬浮窗，避免遮挡界面
+        try {
+            pub.lkz.chat.call.FloatingCallWindow.hide()
+        } catch (_: Throwable) {
+        }
         try {
             lynxView?.onEnterForeground()
         } catch (e: Throwable) {

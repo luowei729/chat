@@ -33,6 +33,7 @@ import {
   attachments,
   conversationMembers,
   conversations,
+  messageHides,
   messageReactions,
   messages,
   users,
@@ -408,6 +409,26 @@ export async function listMessages(
     conditions.push(lt(messages.seq, options.before));
   }
 
+  /**
+   * 排除「仅删除自己可见」的消息
+   * ------------------------------------------------------------
+   * 用 NOT EXISTS 而不是 NOT IN：
+   *   NOT IN 遇到子查询为空时行为虽正确，但 MySQL 对 NOT IN 的
+   *   优化较差，容易退化成全表扫描；NOT EXISTS 走半连接，
+   *   配合 idx_hides_user 在万级消息下仍是毫秒级。
+   *
+   * 注意：撤回的消息（deleted_at 非空）**不能**在这里过滤，
+   * 它需要占位显示「撤回了一条消息」，否则 seq 断号，
+   * 客户端的增量游标会漏消息。
+   */
+  conditions.push(
+    sql`NOT EXISTS (
+      SELECT 1 FROM ${messageHides}
+      WHERE ${messageHides.messageId} = ${messages.id}
+        AND ${messageHides.userId} = ${userId}
+    )`,
+  );
+
   // 多取一条用于判断是否还有更多
   const rows = await db
     .select(messageSelect)
@@ -478,6 +499,42 @@ export async function deleteMessage(
     );
 
   return { seq: row.seq, memberIds: members.map((m) => m.userId) };
+}
+
+/**
+ * 删除消息（仅自己可见）
+ * ============================================================
+ * 与 deleteMessage（撤回）的区别：
+ *   deleteMessage      软删 deleted_at → 所有成员看到「已撤回」
+ *   hideMessageForUser 写 message_hides → 只有操作者看不到
+ *
+ * 幂等：重复调用不会报错（主键冲突忽略）。
+ * 不推送 WS 事件：只影响自己的其它设备，由这些设备重新拉取时自然生效。
+ * 若要做到多端实时同步，可在此处给自己所有连接发 conversation.updated，
+ * 但会引入一次全量刷新，当前按「下拉/重进生效」处理更省流量。
+ */
+export async function hideMessageForUser(
+  conversationId: string,
+  messageId: string,
+  userId: string,
+): Promise<{ success: boolean }> {
+  await requireMember(conversationId, userId);
+
+  const rows = await db
+    .select({ id: messages.id })
+    .from(messages)
+    .where(and(eq(messages.id, messageId), eq(messages.conversationId, conversationId)))
+    .limit(1);
+
+  if (!rows[0]) throw new AppError(ErrorCode.MESSAGE_NOT_FOUND);
+
+  // INSERT IGNORE 语义：已隐藏过就跳过，不报唯一键冲突
+  await db
+    .insert(messageHides)
+    .values({ messageId, userId, createdAt: Date.now() })
+    .onDuplicateKeyUpdate({ set: { createdAt: Date.now() } });
+
+  return { success: true };
 }
 
 /* ------------------------------------------------------------------ */

@@ -10,10 +10,11 @@
  * ============================================================
  */
 
-import { useEffect, useState } from '@lynx-js/react';
+import { useEffect, useRef, useState } from '@lynx-js/react';
 import { getIceConfig, getMe } from './api/index.js';
 import { clearTokens, getAccessToken, getRefreshToken, onAuthStateChange } from './api/client.js';
 import { hydrateStorage } from './storage.js';
+import { getGlobalEventEmitter, getNativeModule } from './platform/globals.js';
 import * as ws from './api/ws.js';
 import { setBootstrapped, setUser, useAuth } from './store/auth.js';
 import { setMemberRead } from './store/reads.js';
@@ -21,13 +22,14 @@ import {
   appendMessage,
   applyNewMessage,
   clearMessages,
+  markMessageRecalled,
   removeMessage,
   setConversations,
   setConversationsLoading,
   useConversations,
   updateConversationPrefs,
 } from './store/conversations.js';
-import { push, reset, useCurrentRoute } from './router.js';
+import { canGoBack, pop, push, reset, subscribeRoute, useCurrentRoute } from './router.js';
 import { registerWebRtc, stopCall, updatePeerMediaState, removePeer } from './rtc/engine.js';
 import { commonStyles, colors, fontSize, spacing, useTheme } from './theme.js';
 
@@ -46,6 +48,7 @@ import { UserProfilePage } from './pages/UserProfilePage.js';
 import { GroupInfoPage } from './pages/GroupInfoPage.js';
 import { SettingsPage } from './pages/SettingsPage.js';
 import { SearchMessagesPage } from './pages/SearchMessagesPage.js';
+import { MediaViewerPage } from './pages/MediaViewerPage.js';
 
 export function App() {
   const auth = useAuth();
@@ -123,9 +126,13 @@ export function App() {
       }
     });
 
-    // 消息撤回
+    /**
+     * 消息撤回
+     * 服务端保留 seq 占位，这里也必须保留气泡（显示「消息已撤回」），
+     * 不能 removeMessage —— 否则本地序号断号，与重新拉取的结果不一致。
+     */
     const offDeleted = ws.on('message.deleted', (msg) => {
-      removeMessage(msg.conversationId, msg.messageId);
+      markMessageRecalled(msg.conversationId, msg.messageId);
     });
 
     // 已读回执：把对方的已读水位推进，双勾即时点亮
@@ -190,6 +197,121 @@ export function App() {
     };
   }, [auth.user?.id]);
 
+  /* ---------------- 返回键与右滑返回 ---------------- */
+  /**
+   * 原生返回键 → 前端退栈
+   * ------------------------------------------------------------
+   * 原生侧（MainActivity.onBackPressed）：
+   *   有上一页 → sendGlobalEvent('backPressed')
+   *   根页面   → moveTaskToBack（最小化，不退出）
+   * 这里监听事件执行真正的 pop。
+   */
+  useEffect(() => {
+    const emitter = getGlobalEventEmitter();
+    if (!emitter) return;
+
+    const onBack = () => {
+      if (canGoBack()) pop();
+    };
+
+    /**
+     * 悬浮窗挂断
+     * ------------------------------------------------------------
+     * 原生小窗的挂断按钮不能直接调 JS 函数，
+     * 因此走全局事件：原生发 callHangup → 这里结束通话。
+     * 必须同时停掉 RTC 引擎与前台服务，否则通知栏会残留。
+     */
+    const onHangup = () => {
+      try {
+        stopCall();
+      } catch {
+        // 忽略
+      }
+      void import('./platform/host.js')
+        .then((h) => h.setCallState(false, ''))
+        .catch(() => undefined);
+      // 回到会话列表（通话页可能已被销毁）
+      reset({ name: 'conversations' });
+    };
+
+    try {
+      emitter.addListener('backPressed', onBack);
+      emitter.addListener('callHangup', onHangup);
+    } catch {
+      return;
+    }
+    return () => {
+      try {
+        emitter.removeListener('backPressed', onBack);
+        emitter.removeListener('callHangup', onHangup);
+      } catch {
+        // 忽略
+      }
+    };
+  }, []);
+
+  /**
+   * 同步「能否返回」给原生
+   * 原生需要同步查询（onBackPressed 里不能 await），
+   * 所以每次路由变化都把栈深度推过去。
+   */
+  useEffect(() => {
+    const sync = () => {
+      const host = getNativeModule<{
+        setCanGoBack?: (v: boolean) => void;
+      }>('ChatHost');
+      try {
+        host?.setCanGoBack?.(canGoBack());
+      } catch {
+        // 模块未注册时忽略
+      }
+    };
+    sync();
+    return subscribeRoute(sync);
+  }, []);
+
+  /* ---------------- 右滑返回手势 ---------------- */
+  /**
+   * 从屏幕左边缘向右滑 → 返回上一页
+   * ------------------------------------------------------------
+   * 判定条件（避免误触）：
+   *   1. 起始点距左边缘 < 32px
+   *   2. 水平位移 > 80px
+   *   3. 水平位移 > 垂直位移 × 2（排除上下滚动）
+   *
+   * 为什么在 JS 层做而不是原生：
+   * 原生拦截需要包 LynxView 的 dispatchTouchEvent，会干扰
+   * Lynx 内部的点击/滚动判定；JS 层用 touch 事件零侵入。
+   */
+  const swipeRef = useRef<{ x: number; y: number; active: boolean }>({
+    x: 0,
+    y: 0,
+    active: false,
+  });
+
+  const onTouchStart = (e: { touches?: Array<{ pageX?: number; x?: number; pageY?: number; y?: number }> }) => {
+    const t = e.touches?.[0];
+    if (!t) return;
+    const x = t.pageX ?? t.x ?? 0;
+    const y = t.pageY ?? t.y ?? 0;
+    swipeRef.current = { x, y, active: x < 32 };
+  };
+
+  const onTouchEnd = (e: { changedTouches?: Array<{ pageX?: number; x?: number; pageY?: number; y?: number }> }) => {
+    const st = swipeRef.current;
+    swipeRef.current.active = false;
+    if (!st.active) return;
+
+    const t = e.changedTouches?.[0];
+    if (!t) return;
+    const dx = (t.pageX ?? t.x ?? 0) - st.x;
+    const dy = Math.abs((t.pageY ?? t.y ?? 0) - st.y);
+
+    if (dx > 80 && dx > dy * 2 && canGoBack()) {
+      pop();
+    }
+  };
+
   /* ---------------- 渲染 ---------------- */
   let content;
 
@@ -220,7 +342,12 @@ export function App() {
    */
   return (
     <page>
-      <view style={rootStyle()} key={theme.resolved}>
+      <view
+        style={rootStyle()}
+        key={theme.resolved}
+        bindtouchstart={onTouchStart}
+        bindtouchend={onTouchEnd}
+      >
         {content}
       </view>
     </page>
@@ -318,6 +445,14 @@ function renderRoute(name: string, params?: Record<string, unknown>) {
       return <SettingsPage />;
     case 'search-messages':
       return <SearchMessagesPage />;
+    case 'media-viewer':
+      return (
+        <MediaViewerPage
+          url={(params?.url as string) ?? ''}
+          kind={((params?.kind as string) ?? 'image') as 'image' | 'video'}
+          filename={params?.filename as string | undefined}
+        />
+      );
     default:
       return <ConversationsPage />;
   }

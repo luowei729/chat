@@ -165,6 +165,7 @@ function capabilityMethod(kind: MediaCapability): keyof ChatMediaNative {
 function callNative<T>(
   method: keyof ChatMediaNative,
   args: unknown[],
+  onProgress?: (ratio: number) => void,
 ): Promise<T> {
   const n = native();
   const fn = n?.[method] as
@@ -178,8 +179,27 @@ function callNative<T>(
     let settled = false;
     const cb = (raw: unknown) => {
       if (settled) return;
+
+      const r0 = (raw ?? {}) as Record<string, unknown>;
+
+      /**
+       * 进度帧
+       * ------------------------------------------------------------
+       * 原生上传会把同一个 callback 多次 invoke：
+       *   {pending:true, progress:0.42}  → 进度
+       *   {ok:true, status:201, body:..} → 最终结果
+       * 所以必须先拦 progress 帧，不能当最终结果处理，
+       * 否则第一条进度就会让 Promise 提前 resolve（拿到半个响应）。
+       */
+      if (r0['pending'] === true) {
+        if (onProgress && typeof r0['progress'] === 'number') {
+          onProgress(r0['progress'] as number);
+        }
+        return;
+      }
+
       settled = true;
-      const r = (raw ?? {}) as Record<string, unknown>;
+      const r = r0;
       if (r['ok'] === true) {
         resolve(r as T);
         return;
@@ -362,6 +382,7 @@ export interface UploadResponse {
 export async function uploadPicked(
   file: PickedFile,
   meta?: UploadMeta,
+  onProgress?: (ratio: number) => void,
 ): Promise<UploadResponse> {
   const url = `${API_BASE}/media`;
   // 上传前刷新令牌：access token 只有 15 分钟，
@@ -387,7 +408,9 @@ export async function uploadPicked(
         headers,
         fields,
       }),
-    ]);
+    ],
+      onProgress,
+    );
     const status = Number(r.status ?? 0);
     bodyText = String(r.body ?? '');
     if (status === 401) throw new PlatformMediaError('failed', '登录已过期，请重新登录');

@@ -289,6 +289,30 @@ export function insertOptimistic(conversationId: string, message: Message): void
   });
 }
 
+/**
+ * 更新某条本地消息的上传进度
+ * 只在 optimistic 阶段调用；服务端确认后会整体替换，
+ * 替换后的消息不带 localProgress，进度条自然消失。
+ */
+export function setMessageProgress(
+  conversationId: string,
+  clientId: string,
+  progress: number,
+): void {
+  messagesStore.set((prev) => {
+    const existing = prev.byConversation[conversationId];
+    if (!existing) return prev;
+    let changed = false;
+    const list = existing.map((m) => {
+      if (m.clientId !== clientId) return m;
+      changed = true;
+      return { ...m, localProgress: progress };
+    });
+    if (!changed) return prev;
+    return { ...prev, byConversation: { ...prev.byConversation, [conversationId]: list } };
+  });
+}
+
 /** 标记消息发送失败 */
 export function markMessageFailed(conversationId: string, clientId: string): void {
   messagesStore.set((prev) => {
@@ -301,7 +325,42 @@ export function markMessageFailed(conversationId: string, clientId: string): voi
   });
 }
 
-/** 移除消息（撤回） */
+/**
+ * 标记消息已撤回
+ * ------------------------------------------------------------
+ * 不能直接删掉本地下标：服务端保留了 seq 占位（否则序号断号，
+ * 增量同步游标会漏消息），所以本地也要保留一条 system 占位，
+ * 显示「消息已撤回」。
+ *
+ * 与 removeMessage 的区别：
+ *   markMessageRecalled  撤回 → 留占位（所有人都看得到）
+ *   removeMessage        仅自己删除 → 彻底移除
+ */
+export function markMessageRecalled(conversationId: string, messageId: string): void {
+  messagesStore.set((prev) => {
+    const existing = prev.byConversation[conversationId];
+    if (!existing) return prev;
+    let changed = false;
+    const list = existing.map((m) => {
+      if (m.id !== messageId) return m;
+      if (m.type === 'system' && !m.text) return m;
+      changed = true;
+      return {
+        ...m,
+        type: 'system' as const,
+        text: '消息已撤回',
+        attachments: [],
+        replyToId: null,
+        replyToPreview: null,
+        localStatus: undefined,
+      };
+    });
+    if (!changed) return prev;
+    return { ...prev, byConversation: { ...prev.byConversation, [conversationId]: list } };
+  });
+}
+
+/** 移除消息（仅自己删除） */
 export function removeMessage(conversationId: string, messageId: string): void {
   messagesStore.set((prev) => {
     const existing = prev.byConversation[conversationId];

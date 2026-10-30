@@ -42,11 +42,19 @@ class ChatStoreModule : LynxModule {
         mContext.getSharedPreferences("chat_store", Context.MODE_PRIVATE)
     }
 
-    /** 写入（无回调：调用方不等结果，UI 不应因存储阻塞） */
+    /**
+     * 写入
+     * ------------------------------------------------------------
+     * 用 commit() 而不是 apply()：
+     * apply() 是纯异步落盘，令牌刚写入时用户立刻划掉 App，
+     * 进程被系统回收，数据就丢了 —— 表现就是「退出后登录失效」。
+     * 存储的都是小字段（令牌、主题），commit 的同步开销可以忽略。
+     * 仍然放在后台线程执行（LynxModule 本身就在后台线程），不卡 UI。
+     */
     @LynxMethod
     fun setItem(key: String, value: String) {
         try {
-            prefs.edit().putString(key, value).apply()
+            prefs.edit().putString(key, value).commit()
         } catch (_: Throwable) {
             // 磁盘满等极端情况，静默失败即可，不能影响业务流程
         }
@@ -56,7 +64,7 @@ class ChatStoreModule : LynxModule {
     @LynxMethod
     fun removeItem(key: String) {
         try {
-            prefs.edit().remove(key).apply()
+            prefs.edit().remove(key).commit()
         } catch (_: Throwable) {
         }
     }
@@ -73,19 +81,40 @@ class ChatStoreModule : LynxModule {
     }
 
     /**
-     * 全量导出
-     * 返回 JavaOnlyMap（Lynx 桥接层能直接序列化成 JS 对象），
-     * 前端在启动时预热缓存，避免逐个 key 异步读取。
+     * 全量导出（返回 JSON 字符串）
+     * ------------------------------------------------------------
+     * 为什么不用 JavaOnlyMap：
+     * JavaOnlyMap 跨 JNI → JS 的转换在不同 ROM / 不同 Lynx 版本上
+     * 表现不一致，真机上出现过「回调收到了但 JS 侧拿到空对象」，
+     * 结果就是启动时读不到令牌、被判定为未登录。
+     *
+     * 字符串是桥接层最稳的类型（必然按原样传递），
+     * 由 JS 侧 JSON.parse 还原，代价可忽略（只有几个键）。
      */
     @LynxMethod
     fun dump(callback: Callback) {
-        val map = JavaOnlyMap()
-        try {
+        val json = try {
+            val obj = org.json.JSONObject()
             for ((k, v) in prefs.all) {
-                if (k != null && v is String) map.putString(k, v)
+                if (k != null && v is String && v.isNotEmpty()) {
+                    obj.put(k, v)
+                }
             }
+            obj.toString()
         } catch (_: Throwable) {
+            "{}"
         }
-        callback.invoke(map)
+        callback.invoke(json)
+    }
+
+    /** 键数量，前端可用于判断存储是否真的写进去了（诊断用） */
+    @LynxMethod
+    fun count(callback: Callback) {
+        val n = try {
+            prefs.all.size
+        } catch (_: Throwable) {
+            0
+        }
+        callback.invoke(n)
     }
 }

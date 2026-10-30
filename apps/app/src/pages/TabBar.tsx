@@ -87,7 +87,16 @@ export function TabBar(props: TabBarProps) {
         borderTopColor: colors.border,
       }}
     >
-      {TABS.map((t) => {
+      {/*
+        三等分：每个 Tab 用绝对定位 + 明确的 left 值
+        ------------------------------------------------------------
+        之前用 width:'33.33%' 靠 flex 排列，理论上是等分，但
+        Lynx 在行向容器里做百分比累加时会因浮点舍入产生 1~2px
+        偏差，三个叠起来就出现「第三个比前两个窄」，点击区也随之
+        偏移。改成绝对定位后每个 Tab 的 left 都是硬值，
+        位置与点击区完全确定，任何屏宽都严格三等分。
+      */}
+      {TABS.map((t, i) => {
         const isActive = t.key === active;
         const badge = t.key === 'chats' ? chatBadge : t.key === 'contacts' ? contactBadge : 0;
 
@@ -95,7 +104,10 @@ export function TabBar(props: TabBarProps) {
           <view
             key={t.key}
             style={{
-              width: '33.33%',
+              position: 'absolute',
+              left: `${(i * 100) / 3}%`,
+              top: 0,
+              width: `${100 / 3}%`,
               height: '100%',
               display: 'flex',
               flexDirection: 'column',
@@ -128,10 +140,9 @@ export function TabBar(props: TabBarProps) {
                     top: '-4px',
                     minWidth: '16px',
                     height: '16px',
-                    borderRadius: radius.full,
+                    borderRadius: '8px',
                     backgroundColor: colors.danger,
                     display: 'flex',
-                    flexDirection: 'row',
                     alignItems: 'center',
                     justifyContent: 'center',
                     paddingLeft: '4px',
@@ -145,11 +156,9 @@ export function TabBar(props: TabBarProps) {
               ) : null}
             </view>
 
-            {/* 文字 */}
             <text
               style={{
                 fontSize: fontSize.xs,
-                // 纯白单一色系：选中纯白，未选中灰白
                 color: isActive ? colors.text : colors.textFaint,
                 fontWeight: isActive ? '600' : '400',
                 marginTop: '2px',
@@ -160,6 +169,7 @@ export function TabBar(props: TabBarProps) {
           </view>
         );
       })}
+
     </view>
   );
 }

@@ -140,6 +140,13 @@ export function listFriendRequests(): Promise<FriendRequests> {
 }
 
 /** 发起好友请求；对方此前已请求时会直接成为好友 */
+/** 直接添加联系人（免审批，立即生效） */
+export function addFriendDirectly(
+  userId: string,
+): Promise<{ autoAccepted: boolean; conversationId: string | null }> {
+  return post('/friends/add', { userId });
+}
+
 export function requestFriend(userId: string): Promise<{ autoAccepted: boolean; conversationId: string | null }> {
   return post('/friends/request', { userId });
 }
@@ -335,6 +342,17 @@ export function sendMessage(
   input: SendMessageRequest,
 ): Promise<Message> {
   return post(`/conversations/${encodeURIComponent(conversationId)}/messages`, input);
+}
+
+/**
+ * 删除消息（仅自己可见）
+ * 与 deleteMessage（撤回，双方可见）区分开
+ */
+export function hideMessage(
+  conversationId: string,
+  messageId: string,
+): Promise<{ success: boolean }> {
+  return del(`/messages/${encodeURIComponent(messageId)}/for-me`, { conversationId });
 }
 
 /** 撤回消息 */

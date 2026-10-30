@@ -101,7 +101,11 @@ async function loadMembers(conversationIds: string[]) {
  * 已排除撤回消息（deleted_at 非空），客户端不会看到「已撤回」当摘要。
  * ============================================================
  */
-export async function loadLastMessages(conversationIds: string[]): Promise<Map<string, MessagePreview>> {
+export async function loadLastMessages(
+  conversationIds: string[],
+  /** 查看者 id：传了就排除「该用户已删除」的消息，保证会话列表摘要与聊天页一致 */
+  viewerId?: string,
+): Promise<Map<string, MessagePreview>> {
   const result = new Map<string, MessagePreview>();
   if (conversationIds.length === 0) return result;
 
@@ -125,6 +129,20 @@ export async function loadLastMessages(conversationIds: string[]): Promise<Map<s
       and(
         inArray(messages.conversationId, conversationIds),
         isNull(messages.deletedAt),
+        /**
+         * 排除查看者自己删除的消息
+         * ----------------------------------------------------
+         * 否则用户删掉最后一条后，会话列表仍显示它的摘要，
+         * 点进去却看不到 —— 明显的自相矛盾。
+         * 用相关子查询而不是 join：这里已经有一个子查询，
+         * 再加 join 会让执行计划变复杂，实测子查询更快。
+         */
+        viewerId
+          ? sql`NOT EXISTS (
+              SELECT 1 FROM message_hides h
+              WHERE h.message_id = ${messages.id} AND h.user_id = ${viewerId}
+            )`
+          : sql`1 = 1`,
         sql`${messages.seq} = (SELECT MAX(m2.seq) FROM messages m2 WHERE m2.conversation_id = ${messages.conversationId} AND m2.deleted_at IS NULL)`,
       ),
     );
@@ -172,7 +190,7 @@ export async function listConversations(userId: string): Promise<ConversationSum
 
   // 2. 批量取成员与最后消息，避免 N+1
   const memberRows = await loadMembers(conversationIds);
-  const lastMessages = await loadLastMessages(conversationIds);
+  const lastMessages = await loadLastMessages(conversationIds, userId);
 
   const membersByConv = new Map<string, typeof memberRows>();
   for (const m of memberRows) {

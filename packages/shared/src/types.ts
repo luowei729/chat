@@ -245,7 +245,7 @@ export interface Attachment {
    * 文件在服务器上的过期时间（毫秒时间戳）。
    * 到期后服务器删除文件本体，但本条消息与此附件记录保留。
    */
-  expiresAt: number;
+  expiresAt: number | null;
   /**
    * 是否已过期（服务器文件已删除）。
    * true 时 url / thumbUrl 为空字符串，客户端应显示「文件已过期」占位。
@@ -278,6 +278,11 @@ export interface Message {
   editedAt: number | null;
   /** 本地发送状态：仅客户端使用，服务端返回的消息恒为 sent */
   localStatus?: 'sending' | 'sent' | 'failed';
+  /**
+   * 本地上传进度 0~1：仅客户端使用，用于气泡内的进度条。
+   * undefined 表示不显示进度（文本消息、已完成的媒体消息）。
+   */
+  localProgress?: number;
   /** 客户端生成的幂等 id，用于重发去重与本地乐观更新匹配 */
   clientId?: string;
 }

@@ -18,16 +18,25 @@
 
 import { useEffect, useRef, useState } from '@lynx-js/react';
 import type { Message } from '@chat/shared';
-import { getConversation, listMessages, sendMessage } from '../api/index.js';
+import {
+  deleteMessage as deleteMessageApi,
+  getConversation,
+  hideMessage as hideMessageApi,
+  listMessages,
+  sendMessage,
+} from '../api/index.js';
 import { ApiError, newClientId } from '../api/client.js';
 import * as ws from '../api/ws.js';
-import { pop } from '../router.js';
+import { pop, push } from '../router.js';
 import {
   appendMessage,
   clearUnread,
   insertOptimistic,
   markMessageFailed,
+  markMessageRecalled,
   prependMessages,
+  removeMessage,
+  setMessageProgress,
   setMessages,
   setMessagesLoading,
   useMessages,
@@ -83,6 +92,17 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
   const [uploading, setUploading] = useState(false);
   /** 上滑取消录音 */
   const cancelRecordRef = useRef(false);
+  /** 有文字且非语音模式时才显示「发送」按钮，否则显示附件入口 */
+  const showSendButton = !voiceMode && draft.trim().length > 0;
+  /** 是否显示「添加到通讯录」提示条（对方还不在通讯录时） */
+  const [showAddContact, setShowAddContact] = useState(false);
+  const [addingContact, setAddingContact] = useState(false);
+  /** 对方 userId（私聊才有） */
+  const [peerId, setPeerId] = useState<string | null>(null);
+  /** 长按操作的目标消息（null 表示菜单关闭） */
+  const [actionTarget, setActionTarget] = useState<Message | null>(null);
+  /** 操作进行中，防重复点击 */
+  const [acting, setActing] = useState(false);
 
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recordTimer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -105,6 +125,26 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
           setTitle(detail.title);
           // 用服务端快照初始化已读水位，历史消息的双勾状态一进页就正确
           setMembersRead(conversationId, detail.members);
+
+          /**
+           * 私聊：判断对方是否已在通讯录
+           * ------------------------------------------------------
+           * 产品口径（对齐 Telegram）：不要求先加好友才能聊天，
+           * 但如果不是联系人，就在顶部提示「添加到通讯录」，
+           * 点一下即单向添加，不需要对方审批。
+           */
+          if (detail.type === 'direct') {
+            const peer = detail.members.find((m) => m.userId !== myId);
+            if (peer) {
+              setPeerId(peer.userId);
+              void import('../api/index.js')
+                .then((api) => api.getUserProfile(peer.userId))
+                .then((p) => {
+                  if (!cancelled) setShowAddContact(p.relation !== 'friend');
+                })
+                .catch(() => undefined);
+            }
+          }
         }
       } catch {
         // 标题拿不到就用路由传入的
@@ -231,35 +271,92 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
    * 消息里的附件必须是已落盘、已签名的 url，
    * 这样多端同步时对方拿到的就是可直接渲染的地址。
    */
+  /**
+   * 发送媒体（图片/视频/文件）
+   * ------------------------------------------------------------
+   * 流程改为「先显示，再上传」：
+   *   1. 立刻插入一条乐观消息（localStatus='sending'），
+   *      附件 url 用本地文件路径，这样气泡里能马上看到缩略图；
+   *   2. 上传过程中 setMessageProgress 更新百分比，
+   *      气泡内画进度条；
+   *   3. 上传完成 → 发消息 → 用服务端消息替换占位。
+   *
+   * 这样用户点完相册立刻有反馈，不会再出现「点了没反应」的错觉。
+   */
   const sendPicked = async (files: media.PickedFile[], fallbackType: 'image' | 'video' | 'file') => {
     if (files.length === 0) return;
-    setUploading(true);
     setError(null);
-    try {
-      for (const f of files) {
-        const type = pickMessageType(f.mime, fallbackType);
-        const up = await media.uploadPicked(f, {
-          kind: type,
-          width: f.width,
-          height: f.height,
-          durationMs: f.durationMs,
-        });
-        const clientId = newClientId();
+
+    for (const f of files) {
+      const type = pickMessageType(f.mime, fallbackType);
+      const clientId = newClientId();
+
+      // 本地占位消息：先让用户看到
+      const localUri = localFileUri(f.uri);
+      const optimistic: Message = {
+        id: `local-${clientId}`,
+        conversationId,
+        seq: Number.MAX_SAFE_INTEGER,
+        senderId: myId ?? '',
+        senderName: '我',
+        senderAvatarUrl: null,
+        type,
+        text: null,
+        attachments: [
+          {
+            id: `local-${clientId}`,
+            kind: type === 'file' ? 'file' : type === 'video' ? 'video' : 'image',
+            filename: f.name,
+            mime: f.mime,
+            size: f.size,
+            url: localUri,
+            thumbUrl: null,
+            width: f.width ?? null,
+            height: f.height ?? null,
+            durationMs: f.durationMs ?? null,
+            waveform: null,
+            expiresAt: null,
+            expired: false,
+            expiringSoon: false,
+          } as Message['attachments'][number],
+        ],
+        replyToId: null,
+        replyToPreview: null,
+        createdAt: Date.now(),
+        editedAt: null,
+        localStatus: 'sending',
+        localProgress: 0,
+        clientId,
+      };
+      insertOptimistic(conversationId, optimistic);
+
+      try {
+        const up = await media.uploadPicked(
+          f,
+          {
+            kind: type,
+            width: f.width,
+            height: f.height,
+            durationMs: f.durationMs,
+          },
+          (ratio) => setMessageProgress(conversationId, clientId, ratio),
+        );
+
         const saved = await sendMessage(conversationId, {
           clientId,
           type,
           attachmentIds: [up.attachment.id],
         });
         appendMessage(conversationId, { ...saved, clientId });
+      } catch (e) {
+        markMessageFailed(conversationId, clientId);
+        if (e instanceof media.PlatformMediaError && e.code === 'cancelled') {
+          // 用户取消：把占位消息删掉，不留垃圾
+          removeMessage(conversationId, `local-${clientId}`);
+        } else {
+          setError(e instanceof Error ? e.message : '发送失败，请重试');
+        }
       }
-    } catch (e) {
-      if (e instanceof media.PlatformMediaError && e.code === 'cancelled') {
-        // 用户取消，不提示错误
-      } else {
-        setError(e instanceof Error ? e.message : '发送失败，请重试');
-      }
-    } finally {
-      setUploading(false);
     }
   };
 
@@ -334,15 +431,39 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
       return;
     }
 
+    const clientId = newClientId();
+    // 先插入占位，让用户看到「发送中」
+    const optimistic: Message = {
+      id: `local-${clientId}`,
+      conversationId,
+      seq: Number.MAX_SAFE_INTEGER,
+      senderId: myId ?? '',
+      senderName: '我',
+      senderAvatarUrl: null,
+      type: 'audio',
+      text: null,
+      attachments: [],
+      replyToId: null,
+      replyToPreview: null,
+      createdAt: Date.now(),
+      editedAt: null,
+      localStatus: 'sending',
+      localProgress: 0,
+      clientId,
+    };
+    insertOptimistic(conversationId, optimistic);
+
     try {
       const voice = await media.stopVoiceRecord();
-      setUploading(true);
-      const up = await media.uploadPicked(voice, {
-        kind: 'audio',
-        durationMs: voice.durationMs,
-        waveform: voice.waveform,
-      });
-      const clientId = newClientId();
+      const up = await media.uploadPicked(
+        voice,
+        {
+          kind: 'audio',
+          durationMs: voice.durationMs,
+          waveform: voice.waveform,
+        },
+        (ratio) => setMessageProgress(conversationId, clientId, ratio),
+      );
       const saved = await sendMessage(conversationId, {
         clientId,
         type: 'audio',
@@ -350,11 +471,111 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
       });
       appendMessage(conversationId, { ...saved, clientId });
     } catch (e) {
+      markMessageFailed(conversationId, clientId);
       if (!(e instanceof media.PlatformMediaError && e.code === 'cancelled')) {
         setError(e instanceof Error ? e.message : '语音发送失败');
       }
+    }
+  };
+
+  /* ---------------- 消息长按操作 ---------------- */
+
+  /**
+   * 撤回
+   * ------------------------------------------------------------
+   * 服务端把 deleted_at 置位，并向全部成员广播 message.deleted，
+   * 所有客户端把该气泡替换成「撤回了一条消息」。
+   *
+   * 【不做时间限制】
+   * 微信限 2 分钟，但那条规则的实际效果是：用户长按老消息
+   * 发现没有「撤回」选项，以为功能坏了。
+   * Telegram 私聊同样不限时。这里跟随 TG：
+   * 自己的消息随时可撤回，规则简单、可预期。
+   */
+  const canRecall = (m: Message): boolean =>
+    m.senderId === myId &&
+    !!m.id &&
+    !m.id.startsWith('local-') &&
+    m.type !== 'system';
+
+  const handleRecall = async () => {
+    const m = actionTarget;
+    if (!m || acting) return;
+    setActing(true);
+    setActionTarget(null);
+    try {
+      await deleteMessageApi(conversationId, m.id);
+      // 本地立即生效，不等 WS 回包（弱网下体验更顺）
+      markMessageRecalled(conversationId, m.id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '撤回失败');
     } finally {
-      setUploading(false);
+      setActing(false);
+    }
+  };
+
+  /**
+   * 删除（仅自己）
+   * ------------------------------------------------------------
+   * 服务端写 message_hides，之后所有端拉历史都不会再返回这条。
+   * 不广播：别人的视图不受影响。
+   */
+  const handleDeleteLocal = async () => {
+    const m = actionTarget;
+    if (!m || acting) return;
+    setActing(true);
+    setActionTarget(null);
+
+    // 本地占位消息（还没发成功）直接移除，不用打服务端
+    if (m.id.startsWith('local-')) {
+      removeMessage(conversationId, m.id);
+      setActing(false);
+      return;
+    }
+
+    try {
+      await hideMessageApi(conversationId, m.id);
+      removeMessage(conversationId, m.id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '删除失败');
+    } finally {
+      setActing(false);
+    }
+  };
+
+  /** 复制文本到剪贴板 */
+  const handleCopy = () => {
+    const m = actionTarget;
+    setActionTarget(null);
+    if (!m?.text) return;
+    try {
+      const g = globalThis as unknown as {
+        lynx?: { setClipboardData?: (p: { data: string }) => void };
+      };
+      g.lynx?.setClipboardData?.({ data: m.text });
+    } catch {
+      setError('复制失败');
+    }
+  };
+
+  /* ---------------- 添加到通讯录 ---------------- */
+  /**
+   * 单向添加，不等对方审批。
+   * 成功后立即隐藏提示条并刷新联系人列表（通讯录页数据同步）。
+   */
+  const handleAddContact = async () => {
+    if (!peerId || addingContact) return;
+    setAddingContact(true);
+    try {
+      const api = await import('../api/index.js');
+      await api.addFriendDirectly(peerId);
+      setShowAddContact(false);
+      const friends = await import('../store/friends.js');
+      await friends.refreshFriends();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '添加失败，请重试');
+    } finally {
+      setAddingContact(false);
     }
   };
 
@@ -405,6 +626,47 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
         </view>
       </view>
 
+      {/* 顶部提示：对方还不在通讯录（Telegram 式，不阻断聊天） */}
+      {showAddContact && peerId ? (
+        <view
+          style={{
+            width: '100%',
+            flexShrink: 0,
+            display: 'flex',
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            paddingLeft: spacing.md,
+            paddingRight: spacing.md,
+            paddingTop: spacing.sm,
+            paddingBottom: spacing.sm,
+            backgroundColor: colors.primarySoft,
+            borderBottomWidth: '1px',
+            borderBottomColor: colors.border,
+          }}
+        >
+          <text style={{ color: colors.textMuted, fontSize: fontSize.xs, width: '66%' }}>
+            对方不在你的通讯录
+          </text>
+          <view
+            style={{
+              paddingLeft: spacing.md,
+              paddingRight: spacing.md,
+              paddingTop: '5px',
+              paddingBottom: '5px',
+              borderRadius: radius.sm,
+              backgroundColor: colors.primary,
+              opacity: addingContact ? 0.6 : 1,
+            }}
+            bindtap={handleAddContact}
+          >
+            <text style={{ color: colors.onPrimary, fontSize: fontSize.xs, fontWeight: '600' }}>
+              {addingContact ? '添加中…' : '添加到通讯录'}
+            </text>
+          </view>
+        </view>
+      ) : null}
+
       {/* 消息列表 */}
       <view style={{ flex: 1, width: '100%', display: 'flex', flexDirection: 'column' }}>
         {/* 加载更多 */}
@@ -429,6 +691,7 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
             message={msg}
             isSelf={msg.senderId === myId}
             peerSeq={peerSeq}
+            onLongPress={() => setActionTarget(msg)}
           />
         ))}
 
@@ -439,20 +702,6 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
       {error ? (
         <view style={{ paddingLeft: spacing.md, paddingRight: spacing.md, paddingBottom: spacing.xs }}>
           <text style={{ color: colors.danger, fontSize: fontSize.xs }}>{error}</text>
-        </view>
-      ) : null}
-
-      {/* 上传中提示 */}
-      {uploading ? (
-        <view
-          style={{
-            width: '100%',
-            paddingLeft: spacing.md,
-            paddingRight: spacing.md,
-            paddingBottom: spacing.xs,
-          }}
-        >
-          <text style={{ color: colors.textMuted, fontSize: fontSize.xs }}>正在发送…</text>
         </view>
       ) : null}
 
@@ -494,22 +743,31 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
           </view>
         ) : null}
 
-        {/* 底部一行：语音切换 / 输入 / 附件 */}
+        {/*
+          输入行：全部绝对定位
+          ------------------------------------------------------------
+          为什么不用 flex：
+          Lynx 里 row 容器的 flex:1 子项宽度会被算成 0，
+          而写死百分比（如 width:'66%'）又会在不同屏宽下留出
+          大小不一的空隙 —— 表现就是「按钮没贴右边缘、输入框
+          没填满中间」，也就是用户说的「没有屏幕自适应」。
+          用 left / right 同时约束的绝对定位，宽度由父级减去
+          两侧偏移自动得出，任何屏宽都精确填满。
+        */}
         <view
           style={{
             width: '100%',
-            display: 'flex',
-            flexDirection: 'row',
-            alignItems: 'center',
-            paddingLeft: spacing.sm,
-            paddingRight: spacing.sm,
-            paddingTop: spacing.sm,
-            paddingBottom: spacing.sm,
+            height: '56px',
+            position: 'relative',
+            backgroundColor: colors.surface,
           }}
         >
-          {/* 语音 / 键盘 切换 */}
+          {/* 左：语音 / 键盘 切换 */}
           <view
             style={{
+              position: 'absolute',
+              left: spacing.sm,
+              top: '8px',
               width: '38px',
               height: '40px',
               display: 'flex',
@@ -528,8 +786,16 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
             )}
           </view>
 
-          {/* 中间：输入框 or 按住说话 */}
-          <view style={{ width: '66%', marginLeft: spacing.xs, marginRight: spacing.xs }}>
+          {/* 中：输入框 / 按住说话 —— left + right 双约束自动撑满 */}
+          <view
+            style={{
+              position: 'absolute',
+              left: '50px',
+              right: showSendButton ? '72px' : '54px',
+              top: '8px',
+              height: '40px',
+            }}
+          >
             {voiceMode ? (
               <view
                 style={{
@@ -545,10 +811,8 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
                   void startRecording();
                 }}
                 bindtouchmove={(e: { touches?: Array<{ y?: number }> }) => {
-                  // 上滑超过阈值则标记取消（Lynx 的 touch 事件带坐标）
                   const y = e.touches?.[0]?.y ?? 0;
-                  if (y < 120) cancelRecordRef.current = true;
-                  else cancelRecordRef.current = false;
+                  cancelRecordRef.current = y < 120;
                 }}
                 bindtouchend={() => {
                   void finishRecording(cancelRecordRef.current);
@@ -568,7 +832,7 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
               </view>
             ) : (
               <input
-                style={{ ...commonStyles.input, height: '40px' }}
+                style={{ ...commonStyles.input, width: '100%', height: '40px' }}
                 default-value={draft}
                 placeholder="输入消息…"
                 bindinput={(e: { detail: { value: string } }) => handleInput(e.detail.value)}
@@ -577,10 +841,13 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
             )}
           </view>
 
-          {/* 右侧：有文字则发送，否则显示附件入口 */}
-          {draft.trim() && !voiceMode ? (
+          {/* 右：发送（有文字时）或 附件入口 —— 始终贴右边缘 */}
+          {showSendButton ? (
             <view
               style={{
+                position: 'absolute',
+                right: spacing.sm,
+                top: '8px',
                 width: '56px',
                 height: '40px',
                 borderRadius: radius.md,
@@ -598,13 +865,16 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
           ) : (
             <view
               style={{
+                position: 'absolute',
+                right: spacing.sm,
+                top: '8px',
                 width: '38px',
                 height: '40px',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
               }}
-              bindtap={() => setPanel((p) => (p === 'attach' ? 'none' : 'attach'))}
+              bindtap={() => setPanel((pv) => (pv === 'attach' ? 'none' : 'attach'))}
             >
               <IconAttach size={24} color={colors.text} />
             </view>
@@ -645,6 +915,97 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
           </view>
         ) : null}
       </view>
+
+      {/*
+        长按操作菜单
+        ------------------------------------------------------------
+        用整屏遮罩 + 底部卡片而不是浮层气泡：
+        Lynx 的绝对定位在滚动容器内行为不稳定，遮罩方案
+        不依赖任何父级坐标，各端表现一致。
+        点遮罩关闭，符合「点外面取消」的通用预期。
+      */}
+      {actionTarget ? (
+        <view
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: 0,
+            right: 0,
+            bottom: 0,
+            zIndex: 100,
+            backgroundColor: 'rgba(0,0,0,0.45)',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'flex-end',
+          }}
+          bindtap={() => setActionTarget(null)}
+        >
+          <view
+            style={{
+              width: '100%',
+              backgroundColor: colors.surface,
+              borderTopLeftRadius: radius.xl,
+              borderTopRightRadius: radius.xl,
+              paddingTop: spacing.sm,
+              paddingBottom: spacing.xl,
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+            /* 阻止冒泡：点菜单内部不关闭 */
+            catchtap={() => undefined}
+          >
+            {actionTarget.text ? (
+              <ActionRow label="复制" onTap={handleCopy} />
+            ) : null}
+
+            {canRecall(actionTarget) ? (
+              <ActionRow label="撤回" onTap={() => void handleRecall()} danger />
+            ) : null}
+
+            <ActionRow
+              label={actionTarget.senderId === myId ? '删除' : '删除（仅自己可见）'}
+              onTap={() => void handleDeleteLocal()}
+              danger
+            />
+
+            <ActionRow label="取消" onTap={() => setActionTarget(null)} />
+          </view>
+        </view>
+      ) : null}
+    </view>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* 操作菜单行                                                           */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 菜单项
+ * 三个状态（普通 / 危险 / 取消）用颜色区分，
+ * 不做图标：文字菜单在中文语境下更直接，也避免再画一套图标。
+ */
+function ActionRow(props: { label: string; onTap: () => void; danger?: boolean }) {
+  const { label, onTap, danger } = props;
+  return (
+    <view
+      style={{
+        width: '100%',
+        height: '52px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+      bindtap={onTap}
+    >
+      <text
+        style={{
+          color: danger ? colors.danger : colors.text,
+          fontSize: fontSize.md,
+        }}
+      >
+        {label}
+      </text>
     </view>
   );
 }
@@ -799,6 +1160,20 @@ function AttachButton(props: { label: string; onTap: () => void; renderIcon: () 
   );
 }
 
+/**
+ * 本地文件地址转可直接渲染的 uri
+ * ------------------------------------------------------------
+ * 原生返回的是绝对路径（/data/user/0/.../img.jpg），
+ * Lynx 的 <image> 需要 file:// 前缀才能从本地读图；
+ * 已经是 content:// 或 file:// 的原样返回。
+ */
+function localFileUri(uri: string): string {
+  if (!uri) return '';
+  if (uri.startsWith('file://') || uri.startsWith('content://')) return uri;
+  if (uri.startsWith('http://') || uri.startsWith('https://')) return uri;
+  return `file://${uri}`;
+}
+
 /** 按 mime 推断消息类型，认不出就用调用方的兜底类型 */
 function pickMessageType(mime: string, fallback: 'image' | 'video' | 'audio' | 'file') {
   if (mime.startsWith('image/')) return 'image' as const;
@@ -811,8 +1186,13 @@ function pickMessageType(mime: string, fallback: 'image' | 'video' | 'audio' | '
 /* 消息气泡                                                             */
 /* ------------------------------------------------------------------ */
 
-function MessageBubble(props: { message: Message; isSelf: boolean; peerSeq: number }) {
-  const { message, isSelf, peerSeq } = props;
+function MessageBubble(props: {
+  message: Message;
+  isSelf: boolean;
+  peerSeq: number;
+  onLongPress: () => void;
+}) {
+  const { message, isSelf, peerSeq, onLongPress } = props;
 
   // 系统消息：居中灰字
   if (message.type === 'system') {
@@ -844,39 +1224,71 @@ function MessageBubble(props: { message: Message; isSelf: boolean; peerSeq: numb
   const metaColor = isSelf ? 'rgba(255,255,255,0.72)' : colors.textFaint;
 
   return (
+    /**
+     * 行布局：必须显式 width:'100%' + justifyContent
+     * ------------------------------------------------------------
+     * 之前用 flexDirection:'row-reverse' 让气泡靠右，但同排还放了
+     * 自己的头像，头像占了最右侧的位置，气泡被挤到左边 ——
+     * 看起来就是「消息没有右对齐」。
+     *
+     * Telegram / iMessage 的做法是：**自己的消息不显示头像**，
+     * 气泡直接贴右边缘。这里照此实现，同时用 justifyContent
+     * 而不是 flex 方向来对齐，避免 Lynx 下 row-reverse 的
+     * 子项宽度计算异常。
+     */
     <view
       style={{
+        width: '100%',
         display: 'flex',
-        flexDirection: isSelf ? 'row-reverse' : 'row',
+        flexDirection: 'row',
+        justifyContent: isSelf ? 'flex-end' : 'flex-start',
         paddingLeft: spacing.md,
         paddingRight: spacing.md,
         paddingTop: spacing.xs,
         paddingBottom: spacing.xs,
       }}
+      /*
+        长按弹操作菜单
+        ------------------------------------------------------
+        注意 Lynx 的一个坑：同一元素上 bindtap 与 bindlongpress
+        互斥 —— 同时监听时 longpress 优先，tap 永远不触发。
+        所以长按绑在最外层容器，点击留在内层图片/视频上，
+        两者分属不同元素，互不干扰。
+      */
+      bindlongpress={onLongPress}
     >
-      {/* 头像 */}
+      {/* 头像：只给对方消息显示（自己的消息不显示，与 TG 一致） */}
+      {!isSelf ? (
+        <view
+          style={{
+            width: '34px',
+            height: '34px',
+            flexShrink: 0,
+            borderRadius: radius.full,
+            backgroundColor: colors.primarySoft,
+            borderWidth: '1px',
+            borderColor: colors.cardBorder,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginRight: spacing.sm,
+          }}
+        >
+          <text style={{ color: colors.primary, fontSize: fontSize.sm, fontWeight: '600' }}>
+            {message.senderName.slice(0, 1)}
+          </text>
+        </view>
+      ) : null}
+
+      {/* 气泡列：最宽 78%，自己贴右、对方贴左 */}
       <view
         style={{
-          width: '34px',
-          height: '34px',
-          borderRadius: radius.full,
-          backgroundColor: colors.primarySoft,
-          borderWidth: '1px',
-          borderColor: colors.cardBorder,
+          width: '78%',
           display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          marginLeft: isSelf ? spacing.sm : 0,
-          marginRight: isSelf ? 0 : spacing.sm,
+          flexDirection: 'column',
+          alignItems: isSelf ? 'flex-end' : 'flex-start',
         }}
       >
-        <text style={{ color: colors.primary, fontSize: fontSize.sm, fontWeight: '600' }}>
-          {message.senderName.slice(0, 1)}
-        </text>
-      </view>
-
-      {/* 气泡 + 时间 */}
-      <view style={{ maxWidth: '72%', alignItems: isSelf ? 'flex-end' : 'flex-start' }}>
         {/* 群聊显示发送者昵称 */}
         {!isSelf ? (
           <text style={{ color: colors.textFaint, fontSize: fontSize.xs, marginBottom: '2px' }}>
@@ -895,6 +1307,28 @@ function MessageBubble(props: { message: Message; isSelf: boolean; peerSeq: numb
           }}
         >
           <MessageContent message={message} isSelf={isSelf} />
+
+          {/* 上传进度条：仅 optimistic 媒体消息显示 */}
+          {isSelf && message.localStatus === 'sending' && typeof message.localProgress === 'number' ? (
+            <view
+              style={{
+                width: '100%',
+                height: '3px',
+                borderRadius: '2px',
+                backgroundColor: 'rgba(255,255,255,0.28)',
+                marginTop: '4px',
+              }}
+            >
+              <view
+                style={{
+                  width: `${Math.max(2, Math.round(message.localProgress * 100))}%`,
+                  height: '3px',
+                  borderRadius: '2px',
+                  backgroundColor: '#FFFFFF',
+                }}
+              />
+            </view>
+          ) : null}
 
           {/* 时间 + 勾选：放在气泡内右下角，白勾才读得清 */}
           <view
@@ -923,6 +1357,9 @@ function MessageBubble(props: { message: Message; isSelf: boolean; peerSeq: numb
             {statusText ? (
               <text style={{ color: metaColor, fontSize: '10px', marginLeft: '5px' }}>
                 {statusText}
+                {typeof message.localProgress === 'number'
+                  ? ` ${Math.round(message.localProgress * 100)}%`
+                  : ''}
               </text>
             ) : null}
           </view>
@@ -988,15 +1425,24 @@ function MessageContent(props: { message: Message; isSelf: boolean }) {
       }
 
       return (
-        <image
-          src={mediaUrl(att.url)}
-          style={{
-            width: `${w}px`,
-            height: `${h}px`,
-            borderRadius: radius.md,
+        <view
+          bindtap={() => {
+            push({
+              name: 'media-viewer',
+              params: { url: att.url, kind: 'image', filename: att.filename },
+            });
           }}
-          mode="aspectFill"
-        />
+        >
+          <image
+            src={mediaUrl(att.url)}
+            style={{
+              width: `${w}px`,
+              height: `${h}px`,
+              borderRadius: radius.md,
+            }}
+            mode="aspectFill"
+          />
+        </view>
       );
     }
 
@@ -1006,11 +1452,78 @@ function MessageContent(props: { message: Message; isSelf: boolean }) {
     case 'video': {
       const att = message.attachments[0];
       const sec = att?.durationMs ? Math.max(1, Math.round(att.durationMs / 1000)) : 0;
+
+      if (!att?.url) {
+        return (
+          <view
+            style={{
+              width: '200px',
+              height: '130px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: colors.surfaceAlt,
+              borderRadius: radius.md,
+            }}
+          >
+            <text style={{ color: colors.textMuted, fontSize: fontSize.sm }}>视频已过期</text>
+          </view>
+        );
+      }
+
+      /**
+       * 视频气泡：封面 + 播放按钮 + 时长
+       * ------------------------------------------------------------
+       * 没有服务端生成的封面（thumbUrl 常为空），
+       * 所以不硬解首帧（Lynx 的 video 无法取静帧），
+       * 改用「深色卡片 + 播放三角 + 时长」的通用样式，
+       * 与 TG 在无封面时的表现一致。
+       */
       return (
-        <view style={{ display: 'flex', flexDirection: 'row', width: '100%', alignItems: 'center' }}>
-          <text style={{ color: isSelf ? '#fff' : colors.text, fontSize: fontSize.md }}>▶</text>
-          <text style={{ color: isSelf ? '#fff' : colors.text, fontSize: fontSize.sm }}>
-            视频 {sec}″
+        <view
+          style={{
+            width: '200px',
+            height: '130px',
+            borderRadius: radius.md,
+            backgroundColor: 'rgba(0,0,0,0.35)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            position: 'relative',
+          }}
+          bindtap={() => {
+            push({
+              name: 'media-viewer',
+              params: { url: att.url, kind: 'video', filename: att.filename },
+            });
+          }}
+        >
+          {/* 播放按钮 */}
+          <view
+            style={{
+              width: '46px',
+              height: '46px',
+              borderRadius: '23px',
+              backgroundColor: 'rgba(255,255,255,0.92)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <IconPlay size={18} color="#000000" />
+          </view>
+
+          {/* 时长 */}
+          <text
+            style={{
+              position: 'absolute',
+              right: '8px',
+              bottom: '6px',
+              color: '#FFFFFF',
+              fontSize: '11px',
+            }}
+          >
+            {`${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`}
           </text>
         </view>
       );

@@ -302,6 +302,123 @@ export async function requestFriend(meId: string, targetId: string): Promise<Fri
  * 接受好友请求
  * 同时创建私聊会话（若尚不存在），这样接受后能立刻开聊。
  */
+/**
+ * 直接添加联系人（无需对方批准）
+ * ============================================================
+ * 产品语义（对齐 Telegram）：
+ *   聊天不需要先加好友 —— 任何两个用户都能直接开聊；
+ *   「加到通讯录」只是本地的归类动作，不产生请求、不等审批。
+ *
+ * 与 requestFriend 的区别：
+ *   requestFriend      → 写 pending，等对方 accept（保留兼容）
+ *   addFriendDirectly  → 两步一起做：直接置为 accepted 并建私聊
+ *
+ * 幂等：已是好友直接返回现有会话；被对方拉黑则报错。
+ */
+export async function addFriendDirectly(
+  meId: string,
+  targetId: string,
+): Promise<FriendRequestResult> {
+  if (meId === targetId) throw new AppError(ErrorCode.FRIEND_SELF);
+
+  const [target] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.id, targetId))
+    .limit(1);
+  if (!target) throw new AppError(ErrorCode.NOT_FOUND);
+
+  if (await isBlockedBy(targetId, meId)) {
+    throw new AppError(ErrorCode.FRIEND_BLOCKED_BY_PEER);
+  }
+
+  const now = Date.now();
+
+  const conversationId = await db.transaction(async (tx) => {
+    // 双向都置为 accepted：upsert 语义，已存在就更新
+    for (const [a, b, requester] of [
+      [meId, targetId, meId],
+      [targetId, meId, meId],
+    ] as const) {
+      const [row] = await tx
+        .select({ status: friendships.status })
+        .from(friendships)
+        .where(and(eq(friendships.userId, a), eq(friendships.friendId, b)))
+        .limit(1);
+
+      if (row) {
+        // 已被本人拉黑过就保持 blocked，不覆盖
+        if (row.status !== 'blocked') {
+          await tx
+            .update(friendships)
+            .set({ status: 'accepted', acceptedAt: now })
+            .where(and(eq(friendships.userId, a), eq(friendships.friendId, b)));
+        }
+      } else {
+        await tx.insert(friendships).values({
+          userId: a,
+          friendId: b,
+          status: 'accepted',
+          requesterId: requester,
+          createdAt: now,
+          acceptedAt: now,
+        });
+      }
+    }
+
+    // 建私聊（directKey 唯一索引保证幂等）
+    const key = directKeyOf(meId, targetId);
+    const [existing] = await tx
+      .select({ id: conversations.id })
+      .from(conversations)
+      .where(and(eq(conversations.type, 'direct'), eq(conversations.directKey, key)))
+      .limit(1);
+    if (existing) return existing.id;
+
+    const cid = newId();
+    await tx.insert(conversations).values({
+      id: cid,
+      type: 'direct',
+      title: null,
+      avatarUrl: null,
+      ownerId: null,
+      directKey: key,
+      lastSeq: 0,
+      lastMessageAt: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await tx.insert(conversationMembers).values([
+      {
+        conversationId: cid,
+        userId: meId,
+        role: 'member',
+        lastReadSeq: 0,
+        pinned: false,
+        muted: false,
+        joinedAt: now,
+        updatedAt: now,
+        leftAt: null,
+      },
+      {
+        conversationId: cid,
+        userId: targetId,
+        role: 'member',
+        lastReadSeq: 0,
+        pinned: false,
+        muted: false,
+        joinedAt: now,
+        updatedAt: now,
+        leftAt: null,
+      },
+    ]);
+
+    return cid;
+  });
+
+  return { autoAccepted: true, conversationId };
+}
+
 export async function acceptFriend(meId: string, requesterId: string): Promise<FriendRequestResult> {
   const [mine] = await db
     .select()
@@ -467,4 +584,14 @@ function maskEmail(email: string): string {
   const domain = email.slice(at);
   if (name.length <= 2) return `${name[0] ?? '*'}***${domain}`;
   return `${name.slice(0, 2)}***${domain}`;
+}
+
+/** 取昵称（通知里用，避免整份 profile 查询） */
+export async function nicknameOf(userId: string): Promise<string> {
+  const [u] = await db
+    .select({ nickname: users.nickname })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  return u?.nickname ?? '';
 }

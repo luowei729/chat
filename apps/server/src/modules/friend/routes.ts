@@ -55,6 +55,26 @@ export default async function friendRoutes(app: FastifyInstance): Promise<void> 
     return ok(reply, data);
   });
 
+  /* ---------------- 直接添加联系人（免审批） ---------------- */
+  /**
+   * 与 /friends/request 的区别：
+   *   这是「加到通讯录」，单向动作，立即生效，不等对方点同意。
+   *   前端在聊天页顶部显示「添加到通讯录」，点一下调这个接口。
+   */
+  app.post('/friends/add', { preHandler: [app.requireAuth] }, async (req, reply) => {
+    const { userId } = parseOrThrow(userIdSchema, req.body);
+    const result = await service.addFriendDirectly(req.userId, userId);
+
+    // 通知对方：已把你加入通讯录（对方无需任何操作）
+    notifyFriendAccepted(userId, {
+      userId: req.userId,
+      nickname: await service.nicknameOf(req.userId),
+      avatarUrl: null,
+      conversationId: result.conversationId,
+    });
+    return ok(reply, result);
+  });
+
   /* ---------------- 发起好友请求 ---------------- */
   app.post('/friends/request', { preHandler: [app.requireAuth] }, async (req, reply) => {
     const { userId } = parseOrThrow(userIdSchema, req.body);

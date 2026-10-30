@@ -37,6 +37,8 @@ export interface Route {
     | 'group-info'
     /** 设置 */
     | 'settings'
+    /** 媒体查看器（图片/视频全屏预览） */
+    | 'media-viewer'
     /** 消息全文搜索 */
     | 'search-messages';
   params?: Record<string, unknown>;
@@ -103,4 +105,14 @@ export function popTo(name: Route['name']): void {
     }
     return prev;
   });
+}
+
+/** 当前是否还有上一页（根页面返回 false） */
+export function canGoBack(): boolean {
+  return routerStore.get().stack.length > 1;
+}
+
+/** 订阅路由变化（用于同步「能否返回」给原生） */
+export function subscribeRoute(listener: () => void): () => void {
+  return routerStore.subscribe(listener);
 }

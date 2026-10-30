@@ -84,3 +84,30 @@ export function getLynx(): AnyModule | null {
 export function isLynxNative(): boolean {
   return getLynx() !== null;
 }
+
+/** 全局事件发射器（原生 sendGlobalEvent → JS 侧接收） */
+export interface GlobalEmitter {
+  addListener: (name: string, cb: (...args: unknown[]) => void) => void;
+  removeListener: (name: string, cb: (...args: unknown[]) => void) => void;
+}
+
+/**
+ * 取全局事件发射器
+ * 原生用 LynxView.sendGlobalEvent(name, args) 发事件，
+ * JS 侧通过 lynx.getJSModule('GlobalEventEmitter') 接收。
+ * 拿不到返回 null（Web/桌面端无原生事件，调用方忽略即可）。
+ */
+export function getGlobalEventEmitter(): GlobalEmitter | null {
+  const l = getLynx();
+  const fn = l?.['getJSModule'] as
+    | ((name: string) => unknown)
+    | undefined;
+  if (typeof fn !== 'function') return null;
+  try {
+    const mod = fn.call(l, 'GlobalEventEmitter') as GlobalEmitter | null;
+    if (mod && typeof mod.addListener === 'function') return mod;
+  } catch {
+    // 未注册时忽略
+  }
+  return null;
+}

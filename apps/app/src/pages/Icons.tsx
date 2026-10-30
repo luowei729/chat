@@ -815,77 +815,45 @@ export function IconSend(props: IconProps) {
  * 那样做出来更像「回形针」，而哑铃的三段式在缩放时
  * 比例稳定，不会出现端点粘连。
  */
+/**
+ * 听筒图标（位图资源）
+ * ============================================================
+ * 来源：Material Design 官方 `call` 图标（Apache-2.0），
+ * 路径数据取自 material-icons 仓库的 24dp 版本，
+ * 用 cairosvg 光栅化成 96×96 白色/黑色两套 PNG，
+ * 以 data URI 内嵌（单套约 1.5KB，gzip 后更小）。
+ *
+ * 【为什么最终改成位图】前六版都试图用纯 view + border 拼形状，
+ * 结果是：骨头、闪电、笑脸、刷新、C 形……没有一个能被认成电话。
+ * 听筒的真实轮廓包含两段贝塞尔曲线与外扩的听/话筒，
+ * CSS 盒模型无法表达。用官方图标一步到位，且与系统图标同形。
+ *
+ * 【为什么是两套颜色而不是 tint-color】
+ * Lynx 文档里 `tint-color` 标注 Android=false，
+ * 实测不生效，所以按主题各内嵌一套（本项目只有黑白两色）。
+ */
+const CALL_WHITE =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAYAAADimHc4AAAABmJLR0QA/wD/AP+gvaeTAAAEyUlEQVR4nO3d3YtVVRjH8d/j+NYblREUWQ1NIWXSREMJvRiVqUU3FUIgXfRyFSF5EfgPeNlVUAYR9HJhg1E3JUkElVBRUSMERWJTUxk5voyU2WjfLtYctIPjrL3OWmfts8/6wNzNefaz12/22vvst5GKoiiKoiiKoiiKoiiK4gyApcAoMEW4KWA7cE3u9ekpM4M/2cHAt5sELsu9Xj0D95cf27bc65WLVf0AMCXpvMh9HDazCyLX7AkhARyXNJCglwVmdjxB3VqbF/CZf6J34ZydqG6tlQAyCwngaPQunHMT1a21kAAORu/CuTRR3VoLCWB/9C6cKxLVrbWQACajd+EMJqpbayEB/BK9C2coUd1aCwlgPHoXzk2J6tZaSAA/xm5ixnKg7w5FQwL4IXoXzoCkGxLVrq2QAL6VlOqUwV2J6tZW5QDM7Jik7xP0IknrEtWtrZAtQJLGonZx0kpgSaLatRQawGdRuzhpQNIdiWrXUmgAu6J28X9XJqxdO6EBfC3pr5iNnGJvorq1FBSAmU1L+jhyL5K0R9KOBHVrK3QLkKT3onXhHJL0sJmlut7QLMCyiBflDwE3516nngN8F2HwDwIjudcll06mIEl6s8PPH5a0xsy+6LBOfwKuL9NOZsBYmXYyAjaWv/yMgCXA0TL4GQGvlWknI+BGjwDezt1nowEfeIRwW+4+GwtY4xHAp0DlG4ILT8BHHiE8krvPxgLu9ghgHIj9fEHRgt++YGvuPhsLWA5MzxHAv8Da3L02FrDVYyuYAC7M3WsjARcD+z1CeCN3r40FPOoRAMDG3L02FrDDI4BpYFXuXhsJuBw44BHCPsrD2mkAD3lORWP02V1xXQO84hnCJ/ThLerJAYuBLz1D2Aksyt1z4wBD+O0PALYBC3L33Di4M6ZzfUtueTfldAQsBB4AngLWAuekWlatAE96BgCwiwTfloFhYE/bsv7GTX+bcBeYurIFZjk3D2yRtNnz13dLut/Mfo607BFJOyXN9XaWY5K+kfSV3GNZ45J+kvSrpD8lHenZl4sABrxQYUv4HbgzwnJHcNemYzkB/Ia7Jj7Y+ch0ETAPeLXCyk4DmzpYXuzBb7cPuCTmGCUHDFAtBHBHSJVe7kT6wW95PdVYJYPbEqpMR+BOZd/nWb9bgw+Q6kUmaeH2CVsCVvhl4Pwz1O3m4APQzXGLDngC/+8JLRPABtrutiDD4EOPByBJwL2EvRbzc2buOyLT4EP1AGp5jw5wlaTtkoYDPv6OpFWa+zg/CTOrNKa1DECSgLMkPS/psdy9VNGYAFqAByW9JOmi3L34qBpAp48oJWdmb8lNRY18fLX2AUiSmU2Y2TpJ6yX9kbufmHoigBYzG5V0raQXJZ3I3E4Utd8HzAZYIek5Sffk7uVUjdsHzMbMdpvZakm3S/owdz+henYLaAeslvSsMm8RjTsMrQoYlvSM3A57cbeX3/cBtOAuZW6Q9Li6+DLAEsBpANfJbRHr5Y6iUunbf0ThDbgaeBp318WRyOfiRqv20xdbwGyA+XLT062SVkpaIWmZpJA7Ig5IusXMKr1Xta8DOB1godw0NST3QvFBSUvlzkW1fhZJmi/3v3SmJL0vaXPVwS+KoiiKoiiKoiiKoij6y3973FzUWZYQDgAAAABJRU5ErkJggg==';
+
+const CALL_BLACK =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAYAAADimHc4AAAABmJLR0QA/wD/AP+gvaeTAAAECElEQVR4nO2d24tNURzHPzPDuMeQIoPJJbmFCEWIXMuLy4OSJ54kxZM3pfwL8iC5PWhSnhDxIAolmgdFhCKXDKLcBsfDb3bDYPY6a9baa529fp/6PZ7f/q7f96y1z9pr7XVAURRFURRFURRFURRFUXqmGWgFPgAVy/gAnAEmF6y95mkG2rEvfPdoB8YU2oIapxV3xc/idKEtqHF6M+z8L94X2oKIqLP4zHegwbUQoG9n7qSot/jMN+cqhIGe8kaNGhAYGwM+O1chDPaUN2psDHjnXIUw2lPeqLEx4I1zFcI4T3mjxsaAducqhBZPeaPGxoDnzlUIEz3ljRobA546VyHM9ZQ3amwMeOJaRCfTSfCnqI0BD52rEBqAWZ5yR4uNAffw98hguae80WJjwFfggWshnaz1lDdabAwAaHOqoouFwHBPuaPE1oCbTlV00QAs8ZQ7SmwNuO5UxZ+M95g7OmwNuAt8cinkNx57yls6LuB+Zewh0FhkI0Jj2wMAzjtTIbwHNuFvvaF0TMHtmvD8YuWXg/v0vvjvgHlFCy8LB9BvflBmoMUPThs67ARlN/rND8pwZKeEFj8gJ9BhJyhzyDfgbDB1iXCZfBMWB1OXAKvJN+AGdhuCFUOukm/ClmDqEmAF+QY8BYaEEpgCJveCw8HUJcB0oIOeDfgJrAklMAUOk98LngFNoQSWnZHILuo8E06FEpgC2zB7PLE7lMAUMFk37gCWhhJYdsYCb8k34SX6srY3NmI2FLWR2K64IjmKmQnXSHCLehH0B25jZsIloF8YmeVmImb3gwpydkTfMDLLzWryZ8lZnMPvcNQIrAd2IrPyQR6vFRU7MDOggmwC9jFbng086natL8jwtwdZYCp1DzyIuQltyM9ZV8xDlkfzrvsF2YZ/CNiLbJucj5yX1AT0caipcOqQhpma8ApY5uC6psU3jR/AC2RNvMWBvkKpB45j3tgOZHiwxXXxu8dLYFQv9AWhgepMyH4hDavyOr6Ln8XJKnVFQT3VDUcV5FH2OsP8RRW/gr+DTLxTR3U35iyOAEN7yFtk8bOoabZjPk/4vTds5e/dFiGKX/MGAKzC7ljMW3TtOwpV/FIYADABuINdAc4SrvilMQBgADLGhypk8gZkbMBsfTmWKCXNyFuZoYubrAEZm4HXhC9ysgYAjEAmbt8JX+wkDciYiTw+Dl3wZA3IWAxcIXzhkzUgYyVx9IjkmQ0cw/zFQTXAE03ALuRoHTUgMNOA/ciBgz6Ln+wfUVTDJKRnnAM+4taA1mrFpP7CXB/krNJFyIGBM5FjeGx2RLwFFlDluaqpG/AvGoGpyEayls5oRiaAWfRDzBuC/KfORWAf/g61VRRFURRFURRFURRFUUrAL9gdrgv1ttabAAAAAElFTkSuQmCC';
+
 export function IconPhone(props: IconProps) {
   const { size = 22, color = colors.text } = props;
 
-  /**
-   * 听筒 = 3/4 圆弧 + 两端大圆头耳罩
-   * ------------------------------------------------------------
-   * 试错记录（都是实测截图对比过的）：
-   *   1. 三段哑铃（上耳罩 / 中杆 / 下耳罩）→ 渲染成哑铃，不像听筒；
-   *   2. 两根臂拼 L 再转 -45°          → 内侧圆角形成凹口，变成心形；
-   *   3. 符号相反的短翼                 → 变成闪电；
-   *   4. 半圆弧 + 端帽                  → 变成笑脸。
-   *
-   * 最终方案：3/4 圆环（隐藏上边框）转 45°，两端各叠一个小圆把
-   * 切角磨圆。圆弧本身就是听筒握柄，开口朝右上即握持方向；
-   * 端帽不能再大，否则两个圆会喧宾夺主，整体读成「刷新/重载」。
-   *
-   * 几何以 24 为基准：环外径 18、环心 (12,12)、描边 3.2、端帽半径 2.8。
-   */
-  const u = (v: number) => scale(size, v);
-  const midR = 7.4;
-  // 端帽只用来把切角磨圆，不做耳罩：大耳罩会让整体像「刷新」图标
-  const capR = 1.7;
-  // 隐藏上边框后，两个端点在垂直于竖直轴 ±45° 的位置
-  const ends = [
-    { x: 12 - midR * 0.707, y: 12 - midR * 0.707 },
-    { x: 12 + midR * 0.707, y: 12 - midR * 0.707 },
-  ];
+  // 主题只有黑白两种文本色，据此选择对应底图
+  const isLight = color.toUpperCase().startsWith('#FFF') || color === 'white';
+  const src = isLight ? CALL_WHITE : CALL_BLACK;
 
   return (
-    <view style={{ width: `${size}px`, height: `${size}px`, position: 'relative' }}>
-      <view
-        style={{
-          position: 'absolute',
-          left: 0,
-          top: 0,
-          width: `${size}px`,
-          height: `${size}px`,
-          transform: 'rotate(45deg)',
-        }}
-      >
-        {/* 握柄：3/4 圆环 */}
-        <view
-          style={{
-            position: 'absolute',
-            left: u(3),
-            top: u(3),
-            width: u(18),
-            height: u(18),
-            borderRadius: u(9),
-            borderWidth: u(3.2),
-            borderColor: color,
-            borderTopColor: 'transparent',
-          }}
-        />
-        {/* 两端耳罩 */}
-        {ends.map((e, i) => (
-          <view
-            key={`ear${i}`}
-            style={{
-              position: 'absolute',
-              left: u(e.x - capR),
-              top: u(e.y - capR),
-              width: u(capR * 2),
-              height: u(capR * 2),
-              borderRadius: u(capR),
-              backgroundColor: color,
-            }}
-          />
-        ))}
-      </view>
-    </view>
+    <image
+      src={src}
+      style={{
+        width: `${size}px`,
+        height: `${size}px`,
+      }}
+      mode="aspectFit"
+    />
   );
 }
 

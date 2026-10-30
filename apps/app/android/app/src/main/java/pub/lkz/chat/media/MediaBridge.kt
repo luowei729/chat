@@ -38,6 +38,16 @@ object MediaBridge {
 
     fun hasPending(): Boolean = pendingCallback != null
 
+    /**
+     * 发起系统选择/拍摄界面
+     * ------------------------------------------------------------
+     * 【关键】必须切主线程！
+     * LynxModule 的 @LynxMethod 全部在 Lynx 的后台线程（TASM 线程）
+     * 上执行，而 startActivityForResult 是 UI 操作。在后台线程调用
+     * 时 Android 不会抛异常，只是 Activity 根本不会被拉起 ——
+     * 表现就是「点了相册/文件，什么都没发生」，日志也干净。
+     * 这是本项目里最隐蔽的一类 bug，必须 runOnUiThread。
+     */
     fun launch(activity: Activity, intent: Intent, code: Int, kind: String, cb: Callback) {
         if (pendingCallback != null) {
             fail(cb, "上一个操作还没结束，请稍候")
@@ -46,11 +56,14 @@ object MediaBridge {
         pendingCode = code
         pendingKind = kind
         pendingCallback = cb
-        try {
-            activity.startActivityForResult(intent, code)
-        } catch (e: Throwable) {
-            clear()
-            fail(cb, e.message ?: "无法打开系统界面")
+
+        activity.runOnUiThread {
+            try {
+                activity.startActivityForResult(intent, code)
+            } catch (e: Throwable) {
+                clear()
+                fail(cb, e.message ?: "无法打开系统界面")
+            }
         }
     }
 

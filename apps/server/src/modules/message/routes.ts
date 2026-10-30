@@ -110,6 +110,33 @@ export default async function messageRoutes(app: FastifyInstance): Promise<void>
     },
   );
 
+  /**
+   * 删除消息（仅自己可见）
+   * ------------------------------------------------------------
+   * 与上面的 DELETE /messages/:id（撤回）刻意分成两个接口：
+   *   撤回 → 所有人看到「撤回了一条消息」
+   *   删除 → 只有自己看不到，别人照常
+   * 用不同路径而不是一个接口带 forEveryone 参数，
+   * 是因为两者的权限校验与广播行为完全不同，混在一起容易出错。
+   */
+  app.delete<{ Params: { id: string } }>(
+    '/messages/:id/for-me',
+    { preHandler: [app.requireAuth] },
+    async (req, reply) => {
+      const body = req.body as { conversationId?: string } | undefined;
+      if (!body?.conversationId) {
+        throw new AppError(ErrorCode.BAD_REQUEST, '缺少 conversationId');
+      }
+
+      const result = await service.hideMessageForUser(
+        body.conversationId,
+        req.params.id,
+        req.userId,
+      );
+      return ok(reply, result);
+    },
+  );
+
   /* ---------------- 表情回应 ---------------- */
   app.post<{ Params: { id: string } }>(
     '/messages/:id/reactions',

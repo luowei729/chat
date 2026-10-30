@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================
+  应用图标背景（自适应图标底层）
+  ============================================================
+  渐变蓝：左上偏亮、右下偏深，比纯色更有质感（iOS 图标的做法）。
+  覆盖整个 108×108 画布 —— 自适应图标由启动器施加遮罩，
+  所以底层必须满幅，不能自己画圆角，否则遮罩后会出现白边。
+  ============================================================
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path android:pathData="M0,0 h108 v108 h-108 z">
+        <aapt:attr xmlns:aapt="http://schemas.android.com/aapt" name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="0"
+                android:startY="0"
+                android:endX="108"
+                android:endY="108">
+                <item android:offset="0.0" android:color="#FF4DA3FF" />
+                <item android:offset="0.45" android:color="#FF0A84FF" />
+                <item android:offset="1.0" android:color="#FF0057D9" />
+            </gradient>
+        </aapt:attr>
+    </path>
+</vector>

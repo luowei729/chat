@@ -194,8 +194,11 @@ export function UserProfilePage(props: { userId: string }) {
 
       <view
         style={{
-          flex: 1,
-          width: '100%',
+          position: 'absolute',
+          left: 0,
+          top: '56px',
+          right: 0,
+          bottom: 0,
           display: 'flex',
           flexDirection: 'column',
           paddingLeft: spacing.lg,
@@ -259,7 +262,7 @@ export function UserProfilePage(props: { userId: string }) {
 
         {/* 签名 */}
         {profile.bio ? (
-          <view style={infoCardStyle}>
+          <view style={infoCardStyle()}>
             <text style={{ color: colors.textMuted, fontSize: fontSize.xs, marginBottom: '4px' }}>
               个性签名
             </text>
@@ -269,7 +272,7 @@ export function UserProfilePage(props: { userId: string }) {
 
         {/* 备注名（仅好友可设） */}
         {profile.relation === 'friend' ? (
-          <view style={infoCardStyle}>
+          <view style={infoCardStyle()}>
             <text style={{ color: colors.textMuted, fontSize: fontSize.xs, marginBottom: '6px' }}>
               备注名
             </text>
@@ -371,7 +374,7 @@ export function UserProfilePage(props: { userId: string }) {
 
           {profile.relation === 'request-received' ? (
             <view style={{ width: '100%', display: 'flex', flexDirection: 'row' }}>
-              <view style={{ flex: 1, marginRight: spacing.sm }}>
+              <view style={{ width: '72%', marginRight: spacing.sm }}>
                 <ActionButton label="接受" primary onTap={() => void doAccept()} />
               </view>
               <view style={{ flex: 1 }}>
@@ -394,7 +397,7 @@ export function UserProfilePage(props: { userId: string }) {
 
           {profile.relation === 'friend' ? (
             <view style={{ width: '100%', display: 'flex', flexDirection: 'row', marginTop: spacing.sm }}>
-              <view style={{ flex: 1, marginRight: spacing.sm }}>
+              <view style={{ width: '72%', marginRight: spacing.sm }}>
                 <ActionButton label="删除好友" danger onTap={() => void doRemove()} />
               </view>
               <view style={{ flex: 1 }}>
@@ -412,7 +415,8 @@ export function UserProfilePage(props: { userId: string }) {
 /* 样式与小组件                                                         */
 /* ------------------------------------------------------------------ */
 
-const infoCardStyle = {
+function infoCardStyle() {
+  return {
   width: '100%',
   display: 'flex',
   flexDirection: 'column',
@@ -422,7 +426,8 @@ const infoCardStyle = {
   borderRadius: radius.md,
   padding: spacing.md,
   marginBottom: spacing.sm,
-} as const;
+  } as const;
+}
 
 function ActionButton(props: {
   label: string;

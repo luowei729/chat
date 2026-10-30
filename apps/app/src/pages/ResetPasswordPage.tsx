@@ -110,7 +110,7 @@ export function ResetPasswordPage() {
           </view>
         ) : (
           <>
-            <text style={labelStyle}>邮箱</text>
+            <text style={labelStyle()}>邮箱</text>
             <input
               style={commonStyles.input}
               default-value={email}
@@ -118,7 +118,7 @@ export function ResetPasswordPage() {
               bindinput={(e: { detail: { value: string } }) => setEmail(e.detail.value)}
             />
 
-            <text style={labelStyle}>验证码</text>
+            <text style={labelStyle()}>验证码</text>
             <view
               style={{
                 display: 'flex',
@@ -127,7 +127,7 @@ export function ResetPasswordPage() {
                 marginTop: spacing.sm,
               }}
             >
-              <view style={{ flex: 1, marginRight: spacing.sm }}>
+              <view style={{ width: '72%', marginRight: spacing.sm }}>
                 <input
                   style={commonStyles.input}
                   default-value={code}
@@ -160,7 +160,7 @@ export function ResetPasswordPage() {
               </view>
             </view>
 
-            <text style={labelStyle}>新密码</text>
+            <text style={labelStyle()}>新密码</text>
             <input
               style={commonStyles.input}
               default-value={newPassword}
@@ -202,8 +202,10 @@ export function ResetPasswordPage() {
   );
 }
 
-const labelStyle = {
+function labelStyle() {
+  return {
   color: colors.textMuted,
   fontSize: fontSize.sm,
   marginTop: spacing.md,
-} as const;
+  } as const;
+}

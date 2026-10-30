@@ -1,11 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  旧版 Android（< 8.0）的图标回退方案
-  直接复用前景矢量图 + 深色背景
+  ============================================================
+  应用图标（Android 8.0 以下的回退方案）
+  ============================================================
+  旧系统不支持自适应图标，只能用 layer-list 手动叠两层。
+  这里直接用前景矢量 + 蓝色渐变底，视觉与新版一致；
+  区别只是圆角由系统按各厂商规则裁切，我们自己不画。
+  ============================================================
 -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:drawable="@color/background" />
-    <item
-        android:drawable="@drawable/ic_launcher_foreground"
-        android:gravity="center" />
+    <item android:drawable="@drawable/ic_launcher_background" />
+    <item android:drawable="@drawable/ic_launcher_foreground" />
 </layer-list>

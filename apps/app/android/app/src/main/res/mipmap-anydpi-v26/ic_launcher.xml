@@ -1,17 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   ============================================================
-  应用图标（自适应图标）
+  应用图标（Android 8.0+ 自适应图标）
   ============================================================
-  用矢量图而不是 PNG：
-  1. 任何分辨率都清晰，不需要准备多套尺寸；
-  2. 包体积小（几十字节 vs 几百 KB）；
-  3. CI 构建时无需额外的图标处理步骤。
+  为什么用矢量图而不是 PNG：
+  1. 任何分辨率都清晰，不需要为每个 dpi 准备多套尺寸；
+  2. 包体积只有几百字节；
+  3. CI 构建无需额外的图标处理步骤。
+
+  分层：
+    background —— 蓝色渐变，满幅 108×108（遮罩交给启动器）
+    foreground —— 白色粗体 C，控制在安全区内
   ============================================================
 -->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- 背景：品牌深色 -->
-    <background android:drawable="@color/background" />
-    <!-- 前景：白色 "c" 字形，代表 chat -->
+    <background android:drawable="@drawable/ic_launcher_background" />
     <foreground android:drawable="@drawable/ic_launcher_foreground" />
+    <!--
+      monochrome：Android 13+ 主题图标（Material You）。
+      系统会取这个图层做单色化处理，跟随壁纸配色，
+      不提供的话主题图标会退化成彩色小图，显得很突兀。
+    -->
+    <monochrome android:drawable="@drawable/ic_launcher_foreground" />
 </adaptive-icon>

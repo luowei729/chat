@@ -142,7 +142,7 @@ export function ProfilePage() {
           </view>
 
           {/* 编辑昵称 */}
-          <text style={labelStyle}>昵称</text>
+          <text style={labelStyle()}>昵称</text>
           <input
             style={{ ...commonStyles.input, marginTop: spacing.sm }}
             default-value={nickname}
@@ -151,7 +151,7 @@ export function ProfilePage() {
           />
 
           {/* 编辑签名 */}
-          <text style={labelStyle}>个性签名</text>
+          <text style={labelStyle()}>个性签名</text>
           <input
             style={{ ...commonStyles.input, marginTop: spacing.sm }}
             default-value={bio}
@@ -211,8 +211,10 @@ export function ProfilePage() {
   );
 }
 
-const labelStyle = {
+function labelStyle() {
+  return {
   color: colors.textMuted,
   fontSize: fontSize.sm,
   marginTop: spacing.md,
-} as const;
+  } as const;
+}

@@ -265,7 +265,7 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
           borderTopColor: colors.border,
         }}
       >
-        <view style={{ flex: 1, marginRight: spacing.sm }}>
+        <view style={{ width: '72%', marginRight: spacing.sm }}>
           <input
             style={{ ...commonStyles.input, height: '42px' }}
             default-value={draft}

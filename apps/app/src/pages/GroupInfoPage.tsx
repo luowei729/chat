@@ -160,8 +160,11 @@ export function GroupInfoPage(props: { conversationId: string; title?: string })
 
       <view
         style={{
-          flex: 1,
-          width: '100%',
+          position: 'absolute',
+          left: 0,
+          top: '56px',
+          right: 0,
+          bottom: 0,
           display: 'flex',
           flexDirection: 'column',
           paddingLeft: spacing.lg,
@@ -176,27 +179,27 @@ export function GroupInfoPage(props: { conversationId: string; title?: string })
         ) : null}
 
         {/* 群名 */}
-        <view style={infoCardStyle}>
+        <view style={infoCardStyle()}>
           <text style={{ color: colors.textMuted, fontSize: fontSize.xs, marginBottom: '6px' }}>
             群名称
           </text>
           {editingTitle ? (
             <view style={{ width: '100%', display: 'flex', flexDirection: 'column' }}>
               <input
-                style={inputStyle}
+                style={inputStyle()}
                 default-value={titleDraft}
                 placeholder="输入群名称"
                 bindinput={(e: { detail: { value: string } }) => setTitleDraft(e.detail.value)}
               />
               <view style={{ width: '100%', display: 'flex', flexDirection: 'row', marginTop: spacing.sm }}>
                 <view
-                  style={{ ...smallBtnStyle, backgroundColor: colors.primary, marginRight: spacing.sm }}
+                  style={{ ...smallBtnStyle(), backgroundColor: colors.primary, marginRight: spacing.sm }}
                   bindtap={() => void saveTitle()}
                 >
                   <text style={{ color: '#FFFFFF', fontSize: fontSize.sm }}>保存</text>
                 </view>
                 <view
-                  style={{ ...smallBtnStyle, borderWidth: '1px', borderColor: colors.cardBorder }}
+                  style={{ ...smallBtnStyle(), borderWidth: '1px', borderColor: colors.cardBorder }}
                   bindtap={() => {
                     setEditingTitle(false);
                     setTitleDraft(title);
@@ -252,7 +255,7 @@ export function GroupInfoPage(props: { conversationId: string; title?: string })
 
         {/* 邀请面板 */}
         {inviteOpen ? (
-          <view style={{ ...infoCardStyle, marginBottom: spacing.md }}>
+          <view style={{ ...infoCardStyle(), marginBottom: spacing.md }}>
             {invitable.map((f) => {
               const checked = inviteSelected.includes(f.userId);
               return (
@@ -296,7 +299,7 @@ export function GroupInfoPage(props: { conversationId: string; title?: string })
             })}
             <view
               style={{
-                ...smallBtnStyle,
+                ...smallBtnStyle(),
                 backgroundColor: colors.primary,
                 marginTop: spacing.sm,
               }}
@@ -348,21 +351,21 @@ export function GroupInfoPage(props: { conversationId: string; title?: string })
 
         {/* 成员操作面板 */}
         {activeMember ? (
-          <view style={{ ...infoCardStyle, marginTop: spacing.md }}>
+          <view style={{ ...infoCardStyle(), marginTop: spacing.md }}>
             <text style={{ color: colors.text, fontSize: fontSize.md, marginBottom: spacing.sm }}>
               {activeMember.displayName}
             </text>
             <view style={{ width: '100%', display: 'flex', flexDirection: 'row', flexWrap: 'wrap' }}>
               {activeMember.role === 'member' ? (
                 <view
-                  style={{ ...smallBtnStyle, backgroundColor: colors.primary, marginRight: spacing.sm, marginBottom: spacing.sm }}
+                  style={{ ...smallBtnStyle(), backgroundColor: colors.primary, marginRight: spacing.sm, marginBottom: spacing.sm }}
                   bindtap={() => void memberAction('promote')}
                 >
                   <text style={{ color: '#FFFFFF', fontSize: fontSize.sm }}>设为管理员</text>
                 </view>
               ) : (
                 <view
-                  style={{ ...smallBtnStyle, borderWidth: '1px', borderColor: colors.cardBorder, marginRight: spacing.sm, marginBottom: spacing.sm }}
+                  style={{ ...smallBtnStyle(), borderWidth: '1px', borderColor: colors.cardBorder, marginRight: spacing.sm, marginBottom: spacing.sm }}
                   bindtap={() => void memberAction('demote')}
                 >
                   <text style={{ color: colors.textMuted, fontSize: fontSize.sm }}>取消管理员</text>
@@ -370,21 +373,21 @@ export function GroupInfoPage(props: { conversationId: string; title?: string })
               )}
               {isOwner ? (
                 <view
-                  style={{ ...smallBtnStyle, borderWidth: '1px', borderColor: colors.warning, marginRight: spacing.sm, marginBottom: spacing.sm }}
+                  style={{ ...smallBtnStyle(), borderWidth: '1px', borderColor: colors.warning, marginRight: spacing.sm, marginBottom: spacing.sm }}
                   bindtap={() => void doTransfer()}
                 >
                   <text style={{ color: colors.warning, fontSize: fontSize.sm }}>转让群主</text>
                 </view>
               ) : null}
               <view
-                style={{ ...smallBtnStyle, borderWidth: '1px', borderColor: colors.danger, marginBottom: spacing.sm }}
+                style={{ ...smallBtnStyle(), borderWidth: '1px', borderColor: colors.danger, marginBottom: spacing.sm }}
                 bindtap={() => void memberAction('remove')}
               >
                 <text style={{ color: colors.danger, fontSize: fontSize.sm }}>移出群聊</text>
               </view>
             </view>
             <view
-              style={{ ...smallBtnStyle, borderWidth: '1px', borderColor: colors.cardBorder }}
+              style={{ ...smallBtnStyle(), borderWidth: '1px', borderColor: colors.cardBorder }}
               bindtap={() => setActiveMember(null)}
             >
               <text style={{ color: colors.textMuted, fontSize: fontSize.sm }}>取消</text>
@@ -496,7 +499,8 @@ function MemberRow(props: {
 /* 样式常量                                                             */
 /* ------------------------------------------------------------------ */
 
-const infoCardStyle = {
+function infoCardStyle() {
+  return {
   width: '100%',
   display: 'flex',
   flexDirection: 'column',
@@ -506,9 +510,11 @@ const infoCardStyle = {
   borderRadius: radius.md,
   padding: spacing.md,
   marginBottom: spacing.sm,
-} as const;
+  } as const;
+}
 
-const inputStyle = {
+function inputStyle() {
+  return {
   width: '100%',
   height: '44px',
   borderRadius: radius.md,
@@ -519,9 +525,11 @@ const inputStyle = {
   paddingRight: spacing.md,
   color: colors.text,
   fontSize: fontSize.md,
-} as const;
+  } as const;
+}
 
-const smallBtnStyle = {
+function smallBtnStyle() {
+  return {
   minWidth: '88px',
   height: '38px',
   borderRadius: radius.md,
@@ -531,4 +539,5 @@ const smallBtnStyle = {
   justifyContent: 'center',
   paddingLeft: spacing.md,
   paddingRight: spacing.md,
-} as const;
+  } as const;
+}

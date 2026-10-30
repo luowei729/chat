@@ -136,7 +136,7 @@ export function NewChatPage() {
 
         {/* 搜索框 */}
         <view style={{ display: 'flex', flexDirection: 'row', width: '100%', alignItems: 'center' }}>
-          <view style={{ flex: 1, marginRight: spacing.sm }}>
+          <view style={{ width: '72%', marginRight: spacing.sm }}>
             <input
               style={commonStyles.input}
               default-value={keyword}

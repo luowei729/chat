@@ -21,6 +21,7 @@ import { ApiError } from '../api/client.js';
 import * as ws from '../api/ws.js';
 import { pop, reset } from '../router.js';
 import { setUser } from '../store/auth.js';
+import { colors } from '../theme.js';
 
 export function RegisterPage(props: { initialInviteCode?: string }) {
   const [step, setStep] = useState(1);
@@ -157,7 +158,7 @@ export function RegisterPage(props: { initialInviteCode?: string }) {
           width: '100%',
           display: 'flex',
           flexDirection: 'column',
-          backgroundColor: '#070B14',
+          backgroundColor: colors.bg,
         }}
       >
         <view
@@ -174,7 +175,7 @@ export function RegisterPage(props: { initialInviteCode?: string }) {
           {/* 顶部返回 */}
           <view style={{ width: '100%', display: 'flex', flexDirection: 'column' }}>
             <text
-              style={{ fontSize: '14px', color: '#4C7DFF', paddingTop: '4px', paddingBottom: '4px' }}
+              style={{ fontSize: '14px', color: colors.primary, paddingTop: '4px', paddingBottom: '4px' }}
               bindtap={pop}
             >
               返回登录
@@ -192,8 +193,8 @@ export function RegisterPage(props: { initialInviteCode?: string }) {
               marginBottom: '20px',
             }}
           >
-            <text style={{ fontSize: '22px', color: '#EDF1F7', fontWeight: '700' }}>创建账号</text>
-            <text style={{ fontSize: '13px', color: '#5F6B84', marginTop: '4px' }}>
+            <text style={{ fontSize: '22px', color: colors.text, fontWeight: '700' }}>创建账号</text>
+            <text style={{ fontSize: '13px', color: colors.textFaint, marginTop: '4px' }}>
               第 1 步 / 共 2 步 · 验证邮箱
             </text>
           </view>
@@ -204,25 +205,25 @@ export function RegisterPage(props: { initialInviteCode?: string }) {
               width: '100%',
               display: 'flex',
               flexDirection: 'column',
-              backgroundColor: '#111A2E',
+              backgroundColor: colors.card,
               borderWidth: '1px',
-              borderColor: '#21304F',
+              borderColor: colors.cardBorder,
               borderRadius: '18px',
               padding: '16px',
             }}
           >
-            <text style={{ fontSize: '13px', color: '#9AA5BB', marginBottom: '8px' }}>邮箱</text>
+            <text style={{ fontSize: '13px', color: colors.textMuted, marginBottom: '8px' }}>邮箱</text>
             <input
               style={{
                 width: '100%',
                 height: '48px',
                 borderRadius: '12px',
-                backgroundColor: '#141D33',
+                backgroundColor: colors.surfaceAlt,
                 borderWidth: '1px',
-                borderColor: '#1B2540',
+                borderColor: colors.border,
                 paddingLeft: '16px',
                 paddingRight: '16px',
-                color: '#EDF1F7',
+                color: colors.text,
                 fontSize: '15px',
               }}
               default-value={email}
@@ -230,7 +231,7 @@ export function RegisterPage(props: { initialInviteCode?: string }) {
               bindinput={(e: { detail: { value: string } }) => setEmail(e.detail.value)}
             />
 
-            <text style={{ fontSize: '13px', color: '#9AA5BB', marginTop: '14px', marginBottom: '8px' }}>
+            <text style={{ fontSize: '13px', color: colors.textMuted, marginTop: '14px', marginBottom: '8px' }}>
               验证码
             </text>
             <input
@@ -238,12 +239,12 @@ export function RegisterPage(props: { initialInviteCode?: string }) {
                 width: '100%',
                 height: '48px',
                 borderRadius: '12px',
-                backgroundColor: '#141D33',
+                backgroundColor: colors.surfaceAlt,
                 borderWidth: '1px',
-                borderColor: '#1B2540',
+                borderColor: colors.border,
                 paddingLeft: '16px',
                 paddingRight: '16px',
-                color: '#EDF1F7',
+                color: colors.text,
                 fontSize: '15px',
               }}
               default-value={code}
@@ -256,9 +257,9 @@ export function RegisterPage(props: { initialInviteCode?: string }) {
                 width: '100%',
                 height: '40px',
                 borderRadius: '12px',
-                backgroundColor: countdown > 0 ? '#141D33' : '#16264D',
+                backgroundColor: countdown > 0 ? colors.surfaceAlt : colors.primarySoft,
                 borderWidth: '1px',
-                borderColor: countdown > 0 ? '#1B2540' : '#4C7DFF',
+                borderColor: countdown > 0 ? colors.border : colors.primary,
                 display: 'flex',
                 flexDirection: 'row',
                 alignItems: 'center',
@@ -267,7 +268,7 @@ export function RegisterPage(props: { initialInviteCode?: string }) {
               }}
               bindtap={handleSendCode}
             >
-              <text style={{ fontSize: '13px', color: countdown > 0 ? '#5F6B84' : '#4C7DFF' }}>
+              <text style={{ fontSize: '13px', color: countdown > 0 ? colors.textFaint : colors.primary }}>
                 {countdown > 0 ? `${countdown}s 后重发` : '获取验证码'}
               </text>
             </view>
@@ -283,7 +284,7 @@ export function RegisterPage(props: { initialInviteCode?: string }) {
               }}
             >
               {error ? (
-                <text style={{ fontSize: '13px', color: '#FF5C5C', textAlign: 'center' }}>{error}</text>
+                <text style={{ fontSize: '13px', color: colors.danger, textAlign: 'center' }}>{error}</text>
               ) : null}
             </view>
 
@@ -292,7 +293,7 @@ export function RegisterPage(props: { initialInviteCode?: string }) {
                 width: '100%',
                 height: '48px',
                 borderRadius: '12px',
-                backgroundColor: '#4C7DFF',
+                backgroundColor: colors.primary,
                 display: 'flex',
                 flexDirection: 'row',
                 alignItems: 'center',
@@ -305,7 +306,7 @@ export function RegisterPage(props: { initialInviteCode?: string }) {
             </view>
           </view>
 
-          <text style={{ fontSize: '11px', color: '#5F6B84', marginTop: '16px', textAlign: 'center' }}>
+          <text style={{ fontSize: '11px', color: colors.textFaint, marginTop: '16px', textAlign: 'center' }}>
             验证码会发送到你的邮箱，10 分钟内有效
           </text>
         </view>
@@ -321,7 +322,7 @@ export function RegisterPage(props: { initialInviteCode?: string }) {
         width: '100%',
         display: 'flex',
         flexDirection: 'column',
-        backgroundColor: '#070B14',
+        backgroundColor: colors.bg,
       }}
     >
       <view
@@ -337,7 +338,7 @@ export function RegisterPage(props: { initialInviteCode?: string }) {
       >
         <view style={{ width: '100%', display: 'flex', flexDirection: 'column' }}>
           <text
-            style={{ fontSize: '14px', color: '#4C7DFF', paddingTop: '4px', paddingBottom: '4px' }}
+            style={{ fontSize: '14px', color: colors.primary, paddingTop: '4px', paddingBottom: '4px' }}
             bindtap={() => {
               setStep(1);
               setError(null);
@@ -357,8 +358,8 @@ export function RegisterPage(props: { initialInviteCode?: string }) {
             marginBottom: '20px',
           }}
         >
-          <text style={{ fontSize: '22px', color: '#EDF1F7', fontWeight: '700' }}>设置资料</text>
-          <text style={{ fontSize: '13px', color: '#5F6B84', marginTop: '4px' }}>
+          <text style={{ fontSize: '22px', color: colors.text, fontWeight: '700' }}>设置资料</text>
+          <text style={{ fontSize: '13px', color: colors.textFaint, marginTop: '4px' }}>
             第 2 步 / 共 2 步 · {email}
           </text>
         </view>
@@ -368,25 +369,25 @@ export function RegisterPage(props: { initialInviteCode?: string }) {
             width: '100%',
             display: 'flex',
             flexDirection: 'column',
-            backgroundColor: '#111A2E',
+            backgroundColor: colors.card,
             borderWidth: '1px',
-            borderColor: '#21304F',
+            borderColor: colors.cardBorder,
             borderRadius: '18px',
             padding: '16px',
           }}
         >
-          <text style={{ fontSize: '13px', color: '#9AA5BB', marginBottom: '8px' }}>密码</text>
+          <text style={{ fontSize: '13px', color: colors.textMuted, marginBottom: '8px' }}>密码</text>
           <input
             style={{
               width: '100%',
               height: '48px',
               borderRadius: '12px',
-              backgroundColor: '#141D33',
+              backgroundColor: colors.surfaceAlt,
               borderWidth: '1px',
-              borderColor: '#1B2540',
+              borderColor: colors.border,
               paddingLeft: '16px',
               paddingRight: '16px',
-              color: '#EDF1F7',
+              color: colors.text,
               fontSize: '15px',
             }}
             default-value={password}
@@ -395,7 +396,7 @@ export function RegisterPage(props: { initialInviteCode?: string }) {
             bindinput={(e: { detail: { value: string } }) => setPassword(e.detail.value)}
           />
 
-          <text style={{ fontSize: '13px', color: '#9AA5BB', marginTop: '14px', marginBottom: '8px' }}>
+          <text style={{ fontSize: '13px', color: colors.textMuted, marginTop: '14px', marginBottom: '8px' }}>
             昵称
           </text>
           <input
@@ -403,12 +404,12 @@ export function RegisterPage(props: { initialInviteCode?: string }) {
               width: '100%',
               height: '48px',
               borderRadius: '12px',
-              backgroundColor: '#141D33',
+              backgroundColor: colors.surfaceAlt,
               borderWidth: '1px',
-              borderColor: '#1B2540',
+              borderColor: colors.border,
               paddingLeft: '16px',
               paddingRight: '16px',
-              color: '#EDF1F7',
+              color: colors.text,
               fontSize: '15px',
             }}
             default-value={nickname}
@@ -416,7 +417,7 @@ export function RegisterPage(props: { initialInviteCode?: string }) {
             bindinput={(e: { detail: { value: string } }) => setNickname(e.detail.value)}
           />
 
-          <text style={{ fontSize: '13px', color: '#9AA5BB', marginTop: '14px', marginBottom: '8px' }}>
+          <text style={{ fontSize: '13px', color: colors.textMuted, marginTop: '14px', marginBottom: '8px' }}>
             邀请码
           </text>
           <input
@@ -424,12 +425,12 @@ export function RegisterPage(props: { initialInviteCode?: string }) {
               width: '100%',
               height: '48px',
               borderRadius: '12px',
-              backgroundColor: '#141D33',
+              backgroundColor: colors.surfaceAlt,
               borderWidth: '1px',
-              borderColor: '#1B2540',
+              borderColor: colors.border,
               paddingLeft: '16px',
               paddingRight: '16px',
-              color: '#EDF1F7',
+              color: colors.text,
               fontSize: '15px',
             }}
             default-value={inviteCode}
@@ -440,7 +441,7 @@ export function RegisterPage(props: { initialInviteCode?: string }) {
           <text
             style={{
               fontSize: '11px',
-              color: inviteHint ? (inviteHint.ok ? '#34D399' : '#FF5C5C') : '#5F6B84',
+              color: inviteHint ? (inviteHint.ok ? colors.success : colors.danger) : colors.textFaint,
               marginTop: '6px',
             }}
           >
@@ -458,7 +459,7 @@ export function RegisterPage(props: { initialInviteCode?: string }) {
             }}
           >
             {error ? (
-              <text style={{ fontSize: '13px', color: '#FF5C5C', textAlign: 'center' }}>{error}</text>
+              <text style={{ fontSize: '13px', color: colors.danger, textAlign: 'center' }}>{error}</text>
             ) : null}
           </view>
 
@@ -467,7 +468,7 @@ export function RegisterPage(props: { initialInviteCode?: string }) {
               width: '100%',
               height: '48px',
               borderRadius: '12px',
-              backgroundColor: '#4C7DFF',
+              backgroundColor: colors.primary,
               display: 'flex',
               flexDirection: 'row',
               alignItems: 'center',
@@ -483,7 +484,7 @@ export function RegisterPage(props: { initialInviteCode?: string }) {
           </view>
         </view>
 
-        <text style={{ fontSize: '11px', color: '#5F6B84', marginTop: '16px', textAlign: 'center' }}>
+        <text style={{ fontSize: '11px', color: colors.textFaint, marginTop: '16px', textAlign: 'center' }}>
           注册即表示同意用户协议与隐私政策
         </text>
       </view>

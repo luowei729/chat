@@ -1,22 +1,18 @@
 /**
  * ============================================================
  * 登录页
- * ------------------------------------------------------------
- * 交互：邮箱 + 密码登录；失败展示服务端返回的具体原因；
- *      提供注册与忘记密码入口。
+ * ============================================================
+ * 设计语言（iOS 26/27 · Liquid Glass）：
+ *   1. 以「分层材料」代替描边：背景 → 卡片 → 输入框三档明度递进
+ *   2. 大圆角：卡片 26px、输入框 10px、主按钮 14px
+ *   3. 强调色克制：只有主按钮与文字链接用 accent
+ *   4. 字号阶梯：34 标题 / 17 正文 / 13 说明 / 11 脚注
+ *   5. 所有颜色来自 theme.ts 的响应式 colors，自动适配明暗主题
  *
- * 【布局方案 —— 已在 Android 14 模拟器实测通过】
- *   page → 根 view(height:100vh) → 本页 view(height:100%)
- *        → 内层 view(flex:1) → 品牌 / 卡片 / 入口
- *
- * 【关键经验】
- * 1. 不用 scroll-view，也不用 list：
- *    这两个容器在部分父级组合下会把子内容渲染成空白，
- *    且不抛任何错误（onFirstScreen 照常成功），极难排查。
- *    页面内容能一屏放下时，纯 view 布局最可靠。
- * 2. 所有长度写成带单位的字符串（'16px'），
- *    数字形式会触发 CSS length need units 并中断渲染。
- * 3. text 不要直接设 flex，需要弹性布局就用 view 包一层。
+ * 布局（Lynx 铁律，勿改）：
+ *   - 根节点 height:'100vh'，不依赖父级解析
+ *   - 内容区不用 flex:1（会塌陷），整体居中靠定高容器 + marginTop
+ *   - 所有宽度百分比，所有长度带单位
  * ============================================================
  */
 
@@ -26,6 +22,7 @@ import { ApiError } from '../api/client.js';
 import * as ws from '../api/ws.js';
 import { push, reset } from '../router.js';
 import { setUser } from '../store/auth.js';
+import { colors, fontSize, radius, spacing } from '../theme.js';
 
 export function LoginPage() {
   const [email, setEmail] = useState('');
@@ -64,101 +61,126 @@ export function LoginPage() {
   return (
     <view
       style={{
-        height: '100%',
+        height: '100vh',
         width: '100%',
         display: 'flex',
         flexDirection: 'column',
-        backgroundColor: '#070B14',
+        backgroundColor: colors.bg,
       }}
     >
       <view
         style={{
-          flex: 1,
           width: '100%',
           display: 'flex',
           flexDirection: 'column',
-          paddingLeft: '24px',
-          paddingRight: '24px',
-          paddingTop: '32px',
+          paddingLeft: spacing.xl,
+          paddingRight: spacing.xl,
+          paddingTop: '72px',
         }}
       >
-        {/* 品牌区 */}
+        {/* ---------- 品牌区 ---------- */}
         <view
           style={{
             width: '100%',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
-            marginBottom: '24px',
+            marginBottom: spacing.xxl,
           }}
         >
+          {/* Logo：大圆角应用图标 */}
           <view
             style={{
-              width: '64px',
-              height: '64px',
-              borderRadius: '20px',
-              backgroundColor: '#4C7DFF',
+              width: '84px',
+              height: '84px',
+              borderRadius: radius.xl,
+              backgroundColor: colors.primary,
               display: 'flex',
+              flexDirection: 'row',
               alignItems: 'center',
               justifyContent: 'center',
-              marginBottom: '10px',
+              marginBottom: spacing.lg,
             }}
           >
-            <text style={{ fontSize: '28px', color: '#FFFFFF', fontWeight: '700' }}>C</text>
+            <text style={{ fontSize: '38px', color: colors.onPrimary, fontWeight: '700' }}>
+              C
+            </text>
           </view>
-          <text style={{ fontSize: '26px', color: '#EDF1F7', fontWeight: '700' }}>chat</text>
-          <text style={{ fontSize: '13px', color: '#5F6B84', marginTop: '4px' }}>
-            安全 · 快速 · 跨平台聊天
+
+          <text style={{ fontSize: fontSize.hero, color: colors.text, fontWeight: '700' }}>
+            chat
+          </text>
+          <text
+            style={{
+              fontSize: fontSize.md,
+              color: colors.textMuted,
+              marginTop: spacing.xs,
+            }}
+          >
+            安全 · 快速 · 跨平台
           </text>
         </view>
 
-        {/* 表单卡片 */}
+        {/* ---------- 表单卡片 ---------- */}
         <view
           style={{
             width: '100%',
             display: 'flex',
             flexDirection: 'column',
-            backgroundColor: '#111A2E',
+            backgroundColor: colors.card,
             borderWidth: '1px',
-            borderColor: '#21304F',
-            borderRadius: '18px',
-            padding: '16px',
+            borderColor: colors.cardBorder,
+            borderRadius: radius.xl,
+            padding: spacing.lg,
           }}
         >
-          <text style={{ fontSize: '13px', color: '#9AA5BB', marginBottom: '8px' }}>邮箱</text>
+          {/* 邮箱 */}
+          <text
+            style={{
+              fontSize: fontSize.sm,
+              color: colors.textMuted,
+              marginBottom: spacing.sm,
+            }}
+          >
+            邮箱
+          </text>
           <input
             style={{
               width: '100%',
               height: '48px',
-              borderRadius: '12px',
-              backgroundColor: '#141D33',
-              borderWidth: '1px',
-              borderColor: '#1B2540',
-              paddingLeft: '16px',
-              paddingRight: '16px',
-              color: '#EDF1F7',
-              fontSize: '15px',
+              borderRadius: radius.sm,
+              backgroundColor: colors.surfaceAlt,
+              paddingLeft: spacing.lg,
+              paddingRight: spacing.lg,
+              color: colors.text,
+              fontSize: fontSize.md,
             }}
             default-value={email}
             placeholder="you@example.com"
             bindinput={(e: { detail: { value: string } }) => setEmail(e.detail.value)}
           />
 
-          <text style={{ fontSize: '13px', color: '#9AA5BB', marginTop: '14px', marginBottom: '8px' }}>
+          {/* 密码 */}
+          <text
+            style={{
+              fontSize: fontSize.sm,
+              color: colors.textMuted,
+              marginTop: spacing.lg,
+              marginBottom: spacing.sm,
+            }}
+          >
             密码
           </text>
           <input
             style={{
               width: '100%',
               height: '48px',
-              borderRadius: '12px',
-              backgroundColor: '#141D33',
-              borderWidth: '1px',
-              borderColor: '#1B2540',
-              paddingLeft: '16px',
-              paddingRight: '16px',
-              color: '#EDF1F7',
-              fontSize: '15px',
+              borderRadius: radius.sm,
+              backgroundColor: colors.surfaceAlt,
+              paddingLeft: spacing.lg,
+              paddingRight: spacing.lg,
+              color: colors.text,
+              fontSize: fontSize.md,
             }}
             default-value={password}
             type="password"
@@ -166,65 +188,84 @@ export function LoginPage() {
             bindinput={(e: { detail: { value: string } }) => setPassword(e.detail.value)}
           />
 
-          {/* 错误提示：固定高度，避免布局跳动 */}
+          {/* 错误提示：固定高度避免布局跳动 */}
           <view
             style={{
               width: '100%',
-              height: '22px',
+              height: '20px',
               display: 'flex',
               flexDirection: 'column',
               justifyContent: 'center',
-              marginTop: '8px',
+              marginTop: spacing.sm,
             }}
           >
             {error ? (
-              <text style={{ fontSize: '13px', color: '#FF5C5C', textAlign: 'center' }}>{error}</text>
+              <text style={{ fontSize: fontSize.sm, color: colors.danger, textAlign: 'center' }}>
+                {error}
+              </text>
             ) : null}
           </view>
 
+          {/* 主按钮 */}
           <view
             style={{
               width: '100%',
-              height: '48px',
-              borderRadius: '12px',
-              backgroundColor: '#4C7DFF',
+              height: '50px',
+              borderRadius: radius.md,
+              backgroundColor: colors.primary,
               display: 'flex',
+              flexDirection: 'row',
               alignItems: 'center',
               justifyContent: 'center',
-              marginTop: '8px',
+              marginTop: spacing.md,
               opacity: loading ? 0.6 : 1,
             }}
             bindtap={handleLogin}
           >
-            <text style={{ fontSize: '15px', color: '#FFFFFF', fontWeight: '600' }}>
-              {loading ? '登录中…' : '登 录'}
+            <text style={{ fontSize: fontSize.lg, color: colors.onPrimary, fontWeight: '600' }}>
+              {loading ? '登录中…' : '登录'}
             </text>
           </view>
         </view>
 
-        {/* 底部入口 */}
+        {/* ---------- 底部入口 ---------- */}
         <view
           style={{
             width: '100%',
             display: 'flex',
             flexDirection: 'row',
+            alignItems: 'center',
             justifyContent: 'center',
-            marginTop: '18px',
+            marginTop: spacing.xl,
           }}
         >
-          <text
-            style={{ fontSize: '14px', color: '#4C7DFF', padding: '8px' }}
+          <view
+            style={{
+              height: '36px',
+              display: 'flex',
+              flexDirection: 'row',
+              alignItems: 'center',
+              paddingLeft: spacing.md,
+              paddingRight: spacing.md,
+            }}
             bindtap={() => push({ name: 'register' })}
           >
-            注册新账号
-          </text>
-          <text style={{ fontSize: '14px', color: '#1B2540', padding: '8px' }}>|</text>
-          <text
-            style={{ fontSize: '14px', color: '#9AA5BB', padding: '8px' }}
+            <text style={{ fontSize: fontSize.md, color: colors.primary }}>创建账号</text>
+          </view>
+
+          <view
+            style={{
+              height: '36px',
+              display: 'flex',
+              flexDirection: 'row',
+              alignItems: 'center',
+              paddingLeft: spacing.md,
+              paddingRight: spacing.md,
+            }}
             bindtap={() => push({ name: 'reset-password' })}
           >
-            忘记密码
-          </text>
+            <text style={{ fontSize: fontSize.md, color: colors.textMuted }}>忘记密码</text>
+          </view>
         </view>
       </view>
     </view>

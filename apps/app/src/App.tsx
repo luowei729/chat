@@ -27,7 +27,7 @@ import {
 } from './store/conversations.js';
 import { push, reset, useCurrentRoute } from './router.js';
 import { registerWebRtc, stopCall, updatePeerMediaState, removePeer } from './rtc/engine.js';
-import { commonStyles, colors, fontSize, spacing } from './theme.js';
+import { commonStyles, colors, fontSize, spacing, useTheme } from './theme.js';
 
 import { LoginPage } from './pages/LoginPage.js';
 import { RegisterPage } from './pages/RegisterPage.js';
@@ -47,6 +47,7 @@ import { SearchMessagesPage } from './pages/SearchMessagesPage.js';
 
 export function App() {
   const auth = useAuth();
+  const theme = useTheme();
   const route = useCurrentRoute();
   const conversations = useConversations();
   const [bootError, setBootError] = useState<string | null>(null);
@@ -198,9 +199,20 @@ export function App() {
     content = renderRoute(route.name, route.params);
   }
 
+  /**
+   * key={theme.resolved} 强制重建整棵子树
+   * ============================================================
+   * 切换明暗主题时，仅靠 colors 的 getter 不够：
+   * 模块级的样式常量（如页面里的 infoCardStyle）在模块加载时就
+   * 逃逸了颜色值，不会自己刷新。
+   * 用 key 把整棵树卸载重建，所有样式重新求值，最彻底且无需
+   * 在每个页面里写主题监听。
+   */
   return (
     <page>
-      <view style={rootStyle}>{content}</view>
+      <view style={rootStyle()} key={theme.resolved}>
+        {content}
+      </view>
     </page>
   );
 }
@@ -230,13 +242,20 @@ export function App() {
  *    absolute 会成为新的包含块，内部 flex 链同样失效。
  * ============================================================
  */
-const rootStyle = {
-  width: '100%',
-  height: '100vh',
-  display: 'flex',
-  flexDirection: 'column',
-  backgroundColor: colors.bg,
-} as const;
+/**
+ * 根容器样式
+ * 必须是函数：colors 的每个属性都是 getter，
+ * 写成模块级常量会在加载时就把颜色固化，切主题后不刷新。
+ */
+function rootStyle() {
+  return {
+    width: '100%',
+    height: '100vh',
+    display: 'flex',
+    flexDirection: 'column',
+    backgroundColor: colors.bg,
+  } as const;
+}
 
 /** 路由 → 页面组件 */
 function renderRoute(name: string, params?: Record<string, unknown>) {

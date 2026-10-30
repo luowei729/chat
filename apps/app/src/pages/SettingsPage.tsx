@@ -20,7 +20,16 @@ import { getInviteOverview, logout } from '../api/index.js';
 import { pop, push, reset } from '../router.js';
 import { clearFriends, useFriends } from '../store/friends.js';
 import { setUser, useAuth } from '../store/auth.js';
-import { colors, commonStyles, fontSize, radius, spacing } from '../theme.js';
+import {
+  colors,
+  commonStyles,
+  fontSize,
+  radius,
+  setThemeMode,
+  spacing,
+  useTheme,
+  type ThemeMode,
+} from '../theme.js';
 import { TabBar } from './TabBar.js';
 
 export function SettingsPage() {
@@ -165,7 +174,13 @@ export function SettingsPage() {
           />
         </Group>
 
-        {/* 功能分组三：关于 */}
+        {/* 功能分组三：外观 */}
+        <SectionTitle text="外观" />
+        <Group>
+          <ThemeSegmented />
+        </Group>
+
+        {/* 功能分组四：关于 */}
         <SectionTitle text="关于" />
         <Group>
           <Row icon="💾" label="聊天文件保留" value="30 天" onTap={() => undefined} />
@@ -201,6 +216,99 @@ export function SettingsPage() {
           else if (key === 'contacts') push({ name: 'contacts' });
         }}
       />
+    </view>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* 主题切换（iOS 分段控件）                                             */
+/* ------------------------------------------------------------------ */
+
+const THEME_OPTIONS: Array<{ key: ThemeMode; label: string }> = [
+  { key: 'light', label: '浅色' },
+  { key: 'dark', label: '深色' },
+  { key: 'system', label: '跟随系统' },
+];
+
+/**
+ * 分段控件
+ * ------------------------------------------------------------
+ * 实现要点（Lynx 下踩过的坑）：
+ * 1. 三段用百分比宽度（32% + 间隔），**不能用 flex:1** ——
+ *    row 容器里 flex:1 子项宽度会被算成 0，文字直接竖排。
+ * 2. 容器自身也要 width:'100%'，否则子项百分比没有参照。
+ * 3. 选中态用「填充底 + 深色文字」，不靠描边（iOS 分段控件就是这样）。
+ */
+function ThemeSegmented() {
+  const theme = useTheme();
+
+  return (
+    <view
+      style={{
+        width: '100%',
+        flexShrink: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        paddingTop: spacing.md,
+        paddingBottom: spacing.md,
+        paddingLeft: spacing.md,
+        paddingRight: spacing.md,
+      }}
+    >
+      <view
+        style={{
+          width: '100%',
+          height: '34px',
+          display: 'flex',
+          flexDirection: 'row',
+          alignItems: 'center',
+          backgroundColor: colors.surfaceAlt,
+          borderRadius: radius.sm,
+          paddingLeft: '3px',
+          paddingRight: '3px',
+        }}
+      >
+        {THEME_OPTIONS.map((opt, i) => {
+          const active = theme.mode === opt.key;
+          return (
+            <view
+              key={opt.key}
+              style={{
+                width: '32.3%',
+                height: '28px',
+                marginLeft: i === 0 ? '0px' : '1.5%',
+                borderRadius: radius.xs,
+                backgroundColor: active ? colors.cardElevated : 'transparent',
+                display: 'flex',
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+              bindtap={() => setThemeMode(opt.key)}
+            >
+              <text
+                style={{
+                  fontSize: fontSize.sm,
+                  color: active ? colors.text : colors.textMuted,
+                  fontWeight: active ? '600' : '400',
+                }}
+              >
+                {opt.label}
+              </text>
+            </view>
+          );
+        })}
+      </view>
+
+      <text
+        style={{
+          color: colors.textFaint,
+          fontSize: fontSize.xs,
+          marginTop: spacing.sm,
+        }}
+      >
+        当前：{theme.resolved === 'light' ? '浅色' : '深色'}
+      </text>
     </view>
   );
 }

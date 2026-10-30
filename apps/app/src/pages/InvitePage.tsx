@@ -182,7 +182,7 @@ export function InvitePage() {
                 }}
                 bindtap={() => copyCode(c.code)}
               >
-                <view style={{ flex: 1, marginRight: spacing.sm }}>
+                <view style={{ width: '72%', marginRight: spacing.sm }}>
                   <text
                     style={{ color: colors.text, fontSize: fontSize.lg, fontWeight: '600' }}
                     text-maxline="1"

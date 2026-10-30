@@ -191,7 +191,7 @@ export function CallPage(props: {
     <view
       style={{
         ...commonStyles.page,
-        backgroundColor: '#0a0c10',
+        backgroundColor: colors.bg,
         justifyContent: 'space-between',
       }}
     >

@@ -234,7 +234,7 @@ class MainActivity : AppCompatActivity() {
     private fun collapseDebugBar() {
         runOnUiThread {
             debugBar.visibility = View.GONE
-            Toast.makeText(this, "诊断条已收起，长按屏幕顶部可再打开", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "诊断条已收起", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -486,7 +486,11 @@ class MainActivity : AppCompatActivity() {
                     setStatus("✓ 渲染成功", ok = true)
                     // 渲染成功 1 秒后收起诊断条，让出屏幕
                     runOnUiThread {
-                        statusView.postDelayed({ if (rendered && !selfTestMode) collapseDebugBar() }, 1000)
+                        // 仅在诊断条真正显示时才收起（SHOW_DEBUG_BAR=true 的调试构建）；
+        // 正式构建里诊断条本来就不可见，再去「收起」会闪一个无意义的 Toast。
+        if (ChatApplication.SHOW_DEBUG_BAR) {
+            statusView.postDelayed({ if (rendered && !selfTestMode) collapseDebugBar() }, 1000)
+        }
                     }
                     BootLog.markSessionOk()
                 }

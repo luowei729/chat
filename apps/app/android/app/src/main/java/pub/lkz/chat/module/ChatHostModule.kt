@@ -142,10 +142,9 @@ class ChatHostModule : LynxModule {
             } catch (_: Throwable) {
                 // 没有通知权限时启动失败也不影响通话本身
             }
-            // 提前申请悬浮窗权限（用户首次通话时弹系统设置页）
-            if (!FloatingCallWindow.canDraw(ctx)) {
-                FloatingCallWindow.requestPermission(ctx)
-            }
+            // 注意：不要在这里申请悬浮窗权限。
+            // 之前一拨号就跳系统设置页，把正在振铃的通话界面盖住，
+            // 用户以为电话没打出去。权限只在用户点「最小化」时按需申请。
         } else {
             FloatingCallWindow.hide()
             try {

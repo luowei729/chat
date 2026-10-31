@@ -237,12 +237,23 @@ export function CallPage(props: {
   /**
    * 主动最小化
    * ------------------------------------------------------------
-   * 与「按 Home 键」等价，但更明确：用户点一下就把 App 收到后台，
-   * 通话继续、悬浮窗自动出现（MainActivity.onStop 触发）。
-   * 这样用户即使在通话页也知道怎么边聊边看别的东西。
+   * 与「按 Home 键」等价，但更明确。悬浮窗需要系统权限：
+   * 有权限 → 直接退后台，MainActivity.onStop 自动弹小窗；
+   * 没权限 → 跳设置页引导授权（跳设置本身就把 App 送到后台，
+   * 通话靠前台服务继续，授权后下次最小化就有小窗了）。
    */
   const handleMinimize = () => {
-    moveTaskToBack();
+    void (async () => {
+      try {
+        const { hasOverlayPermission, requestOverlayPermission } = await import(
+          '../platform/host.js'
+        );
+        if (await hasOverlayPermission()) moveTaskToBack();
+        else requestOverlayPermission();
+      } catch {
+        moveTaskToBack();
+      }
+    })();
   };
 
   /* ---------------- 静音切换 ---------------- */

@@ -122,8 +122,8 @@ export function moveTaskToBack(): void {
  * 不阻塞通话流程 —— 没授权就只是没有小窗，后台通话仍然可用。
  */
 export function prepareCallBackground(peerName: string): void {
+  // 只启动前台服务保活，不申请悬浮窗权限。
+  // 之前这里一拨号就跳系统设置页，把通话界面盖住体
+  // 验极差；权限改为用户点「最小化」时再按需申请。
   setCallState(true, peerName);
-  void hasOverlayPermission().then((granted) => {
-    if (!granted) requestOverlayPermission();
-  });
 }

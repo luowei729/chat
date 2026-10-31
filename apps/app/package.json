@@ -9,7 +9,7 @@
     "build": "rsbuild build",
     "typecheck": "tsc --noEmit",
     "preview": "rspeedy preview",
-    "verify:bundle": "node scripts/verify-bundle.mjs dist/chat.lynx.bundle \"注册新账号\" \"忘记密码\" \"安全 · 快速 · 跨平台聊天\""
+    "verify:bundle": "node scripts/verify-bundle.mjs dist/chat.lynx.bundle \"创建账号\" \"忘记密码\" \"安全 · 快速 · 跨平台\""
   },
   "dependencies": {
     "@chat/shared": "workspace:*",

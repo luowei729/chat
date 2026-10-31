@@ -95,7 +95,7 @@ jobs:
           # 结构校验 + 关键 UI 文本校验
           # 这些文本只存在于真实登录页，缺失即说明入口组件没编译进去
           node apps/app/scripts/verify-bundle.mjs "$BUNDLE" \
-            "注册新账号" "忘记密码" "安全 · 快速 · 跨平台聊天"
+            "创建账号" "忘记密码" "安全 · 快速 · 跨平台"
 
           cp "$BUNDLE" "$ASSETS_DIR/chat.lynx.bundle"
           echo "=== assets 内容 ==="

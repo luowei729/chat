@@ -13,6 +13,7 @@ import com.lynx.tasm.LynxEnv
 import com.lynx.tasm.service.LynxServiceCenter
 import org.webrtc.PeerConnectionFactory
 import pub.lkz.chat.media.ChatMediaModule
+import pub.lkz.chat.media.ChatRtcModule
 import pub.lkz.chat.media.ChatSocketModule
 import pub.lkz.chat.media.ChatStoreModule
 import pub.lkz.chat.module.ChatHostModule
@@ -155,6 +156,9 @@ class ChatApplication : Application() {
         // WebSocket：Lynx 引擎完全没有长连接能力（连 WebSocket 全局对象都没有
         // 可用实现），必须由宿主提供，否则消息不推送、通话收不到
         LynxEnv.inst().registerModule("ChatSocket", ChatSocketModule::class.java)
+        // 语音通话：Lynx 引擎没有 WebRTC，原生桥接麦克风与 P2P 连接，
+        // 前端 engine.ts 通过 registerNativeRtc() 注册为 RtcProvider
+        LynxEnv.inst().registerModule("ChatRtc", ChatRtcModule::class.java)
     }
 
     /**

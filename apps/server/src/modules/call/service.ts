@@ -23,6 +23,7 @@
  */
 
 import { CALL_MESH_MAX_PARTICIPANTS, ErrorCode, type CallMode, type CallSessionInfo, type CallStatus } from '@chat/shared';
+import { EventEmitter } from 'node:events';
 import { and, eq } from 'drizzle-orm';
 import { db } from '../../db/index.js';
 import { callParticipants, callSessions, users } from '../../db/schema.js';
@@ -33,6 +34,23 @@ import { moduleLogger } from '../../lib/logger.js';
 import { activeMemberIds, requireMember } from '../conversation/service.js';
 
 const log = moduleLogger('call');
+
+/**
+ * 通话结束事件（供 WS 网关订阅后广播）
+ * ------------------------------------------------------------
+ * 之前的 bug：振铃超时走 finalize() 只写库、不广播，
+ * 主叫永远卡在「正在呼叫…」，被叫的来电页也关不掉。
+ * finalize 在 service 层拿不到 gateway（循环依赖），
+ * 所以用事件解耦：service 只管 emit，gateway 负责广播。
+ */
+export interface CallEndedEvent {
+  callId: string;
+  status: CallStatus;
+  reason: 'hangup' | 'reject' | 'timeout' | 'busy' | 'error';
+  userIds: string[];
+}
+
+export const callEndedEvents = new EventEmitter();
 
 /* ------------------------------------------------------------------ */
 /* 内存状态                                                             */
@@ -273,7 +291,15 @@ async function handleRingTimeout(callId: string): Promise<void> {
   if (!call || call.status !== 'ringing') return;
 
   log.info({ callId }, '振铃超时');
+  // finalize 会清掉内存索引，先把要通知的人记下来
+  const userIds = [...call.participants.keys()];
   await finalize(call, 'missed', 'timeout');
+  callEndedEvents.emit('ended', {
+    callId,
+    status: 'missed',
+    reason: 'timeout',
+    userIds,
+  } satisfies CallEndedEvent);
 }
 
 /* ------------------------------------------------------------------ */

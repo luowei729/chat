@@ -131,32 +131,29 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
    *   文本      → 每 14 个字一行 × 30px + 46px 元信息
    * 宁可少渲染几条，也不要溢出盖住标题栏。
    */
-  const LIST_MAX_HEIGHT = 1080;
+  /**
+   * 可见消息：取最后 visibleCount 条
+   * ------------------------------------------------------------
+   * 之前用普通 view + 按估算高度截断（LIST_MAX_HEIGHT），
+   * 因为普通 view 不能滚动，内容一多就溢出盖住标题栏。
+   * 现在改用真正的 scroll-view，高度截断不再需要，
+   * 直接按条数切片即可，滚动容器负责裁剪与滚动。
+   */
+  const displayed = messages.slice(Math.max(0, messages.length - visibleCount));
 
-  const displayed = (() => {
-    const out: Message[] = [];
-    let total = 0;
-    for (let i = messages.length - 1; i >= 0; i -= 1) {
-      if (out.length >= visibleCount) break;
-      const m = messages[i]!;
-
-      let h: number;
-      if (m.type === 'image' || m.type === 'video') {
-        // 图片气泡本身 200 + 头像/时间行 + 上下间距
-        h = 300;
-      } else if (m.type === 'audio' || m.type === 'file') {
-        h = 130;
-      } else {
-        const len = (m.text ?? '').length;
-        h = Math.ceil(Math.max(1, len) / 12) * 32 + 50;
-      }
-
-      if (total + h > LIST_MAX_HEIGHT && out.length > 0) break;
-      total += h;
-      out.unshift(m);
-    }
-    return out;
-  })();
+  /**
+   * 顶部加载防抖
+   * ------------------------------------------------------------
+   * bindscrolltoupper 在首帧挂载、图片解码导致内容变化时
+   * 也可能触发一次。用时间窗过滤掉这些非用户手势，
+   * 避免一进会话就把全部历史 cascade 拉完。
+   */
+  const upperGuardUntil = useRef(0);
+  const handleScrollUpper = () => {
+    if (Date.now() < upperGuardUntil.current) return;
+    upperGuardUntil.current = Date.now() + 800;
+    showEarlier();
+  };
 
   const showEarlier = () => {
     // 本地还有更多就直接放出来，不够再去服务端拉
@@ -170,6 +167,8 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
   // 切换会话时重置可见条数
   useEffect(() => {
     setVisibleCount(20);
+    // 新会话首帧布局未稳，1.5s 内忽略顶部事件
+    upperGuardUntil.current = Date.now() + 1500;
   }, [conversationId]);
   /** 是否显示「添加到通讯录」提示条（对方还不在通讯录时） */
   const [showAddContact, setShowAddContact] = useState(false);
@@ -915,53 +914,23 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
       ) : null}
 
       {/*
-        消息列表
+        消息列表：真正的 scroll-view
         ============================================================
-        【为什么最终不用 scroll-view】
-        scroll-view 的滚动是能用的，但它会**吞掉子元素的点击事件**：
-        图片、视频、文件气泡全都点不开（实测了
-        bindtap 放内层/外层/image 上、experimental-android-enable-new-overflow
-        各种组合，均无效）。
-        而本项目 core 功能依赖「点媒体放大」，所以这里退回普通 view。
-
-        【不用滚动容器怎么保证最新消息可见】
-        只渲染**最后 VISIBLE_COUNT 条**消息：
-          · 打开会话 → 看到最新的一屏，天然贴底；
-          · 点顶部按钮 → 每次多放出 20 条历史（纯前端，不发请求）；
-          · 后端分页 hasMore 仍用于「是否已到最早」。
-        对聊天来说，用户 99% 的场景是看最新消息、翻最近几屏，
-        这个方案完全够用，而且点击、长按都 100% 可靠。
-
-        【为什么贴底对齐】
-        justifyContent:'flex-end' 让消息从底部往上排，
-        消息少时不会浮在顶部留一大片空白（TG 就是这样）。
+        之前用普通 view + 按估算高度截断，只能看最新一屏，
+        历史消息翻不下去 —— 这就是「聊天页不能向下滑动」的根因。
+        现在改回 scroll-view：
+          · 绝对定位定死高度（top/bottom 双约束，任何屏宽都精确）；
+          · 滚到顶部自动加载更早（bindscrolltoupper + 时间窗防抖）；
+          · 新消息 / 图片解码后滚到底（沿用 scrollToBottom）。
+        点击问题已查明与 scroll-view 无关：之前是 flex-end 布局下
+        子元素命中区错位（见下 justifyContent 注释），顶对齐即解决。
       */}
-      {/* 顶部提示行：独立定位，不参与消息列表高度计算 */}
-      <view
-        style={{
-          position: 'absolute',
-          left: 0,
-          right: 0,
-          top: showAddContact && peerId ? '100px' : '56px',
-          height: '30px',
-          zIndex: 5,
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-        bindtap={showEarlier}
-      >
-        <text style={{ color: colors.textFaint, fontSize: fontSize.xs }}>
-          {loading
-            ? '加载中…'
-            : displayed.length < messages.length || hasMore
-              ? '查看更早的消息'
-              : messages.length > 0
-                ? '没有更多了'
-                : ''}
-        </text>
-      </view>
-
-      <view
+      <scroll-view
+        id="msgScroll"
+        scroll-orientation="vertical"
+        enable-scroll={true}
+        upper-threshold={60}
+        bindscrolltoupper={handleScrollUpper}
         style={{
           position: 'absolute',
           left: 0,
@@ -971,19 +940,38 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
           display: 'flex',
           flexDirection: 'column',
           /**
-           * 不能用 justifyContent:'flex-end'
+           * 必须顶对齐，不能用 justifyContent:'flex-end'
            * ------------------------------------------------------------
            * 实测：flex-end 布局下子元素的**命中区没有跟着偏移**，
            * 视觉上消息在底部，但点击坐标仍按顶对齐计算，
-           * 结果点图片/视频全部落空（返回按钮等普通区域的 tap 正常）。
-           * 这是 Lynx 的已知布局/hit-test 缺陷，无绕过办法。
-           *
-           * 改为顶对齐 + 只渲染最后若干条（displayed 已按高度截断），
-           * 点击 100% 可靠。消息较少时上方会留白，与部分 IM 网页版一致。
+           * 结果点图片/视频全部落空。这是 Lynx 的已知布局/hit-test 缺陷。
            */
           justifyContent: 'flex-start',
         }}
       >
+        {/* 顶部提示行：在流内，不再独立定位 */}
+        <view
+          style={{
+            width: '100%',
+            flexShrink: 0,
+            alignItems: 'center',
+            justifyContent: 'center',
+            paddingTop: spacing.sm,
+            paddingBottom: spacing.sm,
+          }}
+          bindtap={showEarlier}
+        >
+          <text style={{ color: colors.textFaint, fontSize: fontSize.xs }}>
+            {loading
+              ? '加载中…'
+              : displayed.length < messages.length || hasMore
+                ? '查看更早的消息'
+                : messages.length > 0
+                  ? '没有更多了'
+                  : ''}
+          </text>
+        </view>
+
         {displayed.map((msg) => (
           <MessageBubble
             key={msg.id}
@@ -996,7 +984,7 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
         ))}
 
         <view style={{ width: '100%', height: spacing.sm, flexShrink: 0 }} />
-      </view>
+      </scroll-view>
 
       {/* 错误提示 */}
       {error ? (

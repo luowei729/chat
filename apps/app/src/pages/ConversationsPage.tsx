@@ -115,9 +115,21 @@ export function ConversationsPage() {
         </view>
       </view>
 
-      {/* 会话列表 */}
-      {/* paddingBottom 给底部导航留位（TabBar 是绝对定位） */}
-      <view style={{ flex: 1, width: '100%', display: 'flex', flexDirection: 'column', paddingBottom: '64px' }}>
+      {/* 会话列表：真实滚动（与聊天页同方案：绝对定位定死高度） */}
+      <scroll-view
+        scroll-orientation="vertical"
+        enable-scroll={true}
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          top: '56px',
+          bottom: '56px',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'flex-start',
+        }}
+      >
         {!loaded || (loading && list.length === 0) ? (
           <view style={{ padding: spacing.xl, alignItems: 'center' }}>
             <text style={{ color: colors.textMuted, fontSize: fontSize.sm }}>加载中…</text>
@@ -172,8 +184,8 @@ export function ConversationsPage() {
         )}
 
         {/* 底部留白，避免最后一项贴边 */}
-        <view style={{ height: spacing.xl }} />
-      </view>
+        <view style={{ width: '100%', height: spacing.xl, flexShrink: 0 }} />
+      </scroll-view>
 
       {/* 底部导航（Telegram 三栏：聊天 / 联系人 / 设置） */}
       <TabBar
@@ -193,6 +205,7 @@ function ConversationItem(props: { conv: ConversationSummary; onTap: () => void 
     <view
       style={{
         display: 'flex',
+        flexShrink: 0,
         flexDirection: 'row', width: '100%',
         alignItems: 'center',
         padding: spacing.md,

@@ -30,7 +30,7 @@ import {
   updateConversationPrefs,
 } from './store/conversations.js';
 import { canGoBack, pop, push, reset, subscribeRoute, useCurrentRoute } from './router.js';
-import { registerWebRtc, stopCall, updatePeerMediaState, removePeer } from './rtc/engine.js';
+import { registerWebRtc, registerNativeRtc, stopCall, updatePeerMediaState, removePeer } from './rtc/engine.js';
 import { commonStyles, colors, fontSize, spacing, useTheme } from './theme.js';
 
 import { LoginPage } from './pages/LoginPage.js';
@@ -60,6 +60,7 @@ export function App() {
   /* ---------------- 启动：恢复登录态 ---------------- */
   useEffect(() => {
     // 注册浏览器 WebRTC（Web/Electron 生效；原生端由 Lynx 模块注册）
+    registerNativeRtc();
     registerWebRtc();
 
     // 令牌失效时统一回到登录页

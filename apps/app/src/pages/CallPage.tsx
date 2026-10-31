@@ -69,6 +69,27 @@ export function CallPage(props: {
     return () => clearInterval(timer);
   }, [phase]);
 
+  /**
+   * 主叫无应答保护
+   * ------------------------------------------------------------
+   * 服务端 45 秒振铃超时后会广播 missed，但弱网下该帧可能丢失，
+   * 主叫会永远卡在「正在呼叫…」。这里 50 秒兜底：仍在振铃就
+   * 主动挂断并提示，避免无限等待。
+   */
+  const phaseRef = useRef(phase);
+  phaseRef.current = phase;
+  useEffect(() => {
+    if (phase !== 'ringing' || incoming) return;
+    const t = setTimeout(() => {
+      if (phaseRef.current === 'ringing') {
+        setError('对方未接听，已自动挂断');
+        ws.hangupCall(callId);
+        setTimeout(() => pop(), 1500);
+      }
+    }, 50_000);
+    return () => clearTimeout(t);
+  }, [phase, incoming, callId]);
+
   /* ---------------- 监听通话状态与信令 ---------------- */
   useEffect(() => {
     const offState = ws.on('call.state', (msg) => {
@@ -77,20 +98,32 @@ export function CallPage(props: {
       if (msg.status === 'active') {
         setPhase('active');
 
-
-
-        /**
-         * Mesh 拓扑维护：
-         * 收到 joinedUserId 说明有人刚加入。
-         * 规则：**已在通话中的人主动向新加入者发 offer**，
-         * 避免双方同时发 offer 造成 glare。
-         */
-        if (msg.joinedUserId && msg.joinedUserId !== myId) {
-          void (async () => {
-            const ice = await ensureIce();
-            if (ice) await connectToNewPeer(msg.joinedUserId!, ice.iceServers);
-          })();
-        }
+        void (async () => {
+          const ice = await ensureIce();
+          if (!ice) return;
+          /**
+           * 主叫入会补课
+           * ------------------------------------------------------------
+           * 之前的 bug：startLocalAudio() 只在「接听」里调，
+           * 主叫方收到 active 时 engine.active 还是 false，
+           * connectToNewPeer 第一行就 return，全程零媒体。
+           * 表现就是「拨出去有振铃、对方接了却没声音、计时也不走」。
+           * 现在 active 到达时若本地还没启动，先补启动，
+           * 再与所有已在通话中的成员逐个建连。
+           */
+          if (!getCallState().active) {
+            const ok = await startLocalAudio(callId, conversationId);
+            if (!ok) {
+              setError(getCallState().error ?? '无法启动麦克风');
+              return;
+            }
+          }
+          const targets = new Set<string>(msg.participantIds ?? []);
+          if (msg.joinedUserId && msg.joinedUserId !== myId) targets.add(msg.joinedUserId);
+          for (const pid of targets) {
+            if (pid !== myId) await connectToNewPeer(pid, ice.iceServers);
+          }
+        })();
       }
 
       if (msg.status === 'ended' || msg.status === 'rejected' || msg.status === 'missed') {

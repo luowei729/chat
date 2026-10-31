@@ -461,6 +461,25 @@ async function handleClientMessage(client: WsClient, msg: WsClientMessage): Prom
 /* ------------------------------------------------------------------ */
 
 export default async function wsPlugin(app: FastifyInstance): Promise<void> {
+  /**
+   * 振铃超时广播
+   * ------------------------------------------------------------
+   * callService.finalize() 只写库，超时路径（无人接听/全员拒接后）
+   * 必须有人把 missed/rejected 推给所有参与者，否则两端界面卡死。
+   * 放插件注册时订阅一次（进程单例，不会重复）。
+   */
+  callService.callEndedEvents.removeAllListeners('ended');
+  callService.callEndedEvents.on('ended', (e: callService.CallEndedEvent) => {
+    sendToUsers(e.userIds, {
+      type: 'call.state',
+      callId: e.callId,
+      status: e.status,
+      participantIds: [],
+      reason: e.reason,
+    });
+    log.info({ callId: e.callId, status: e.status }, '通话结束已广播');
+  });
+
   app.get('/ws', { websocket: true }, (socket, req) => {
     const client: WsClient = {
       socket,

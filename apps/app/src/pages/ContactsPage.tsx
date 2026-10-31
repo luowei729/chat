@@ -23,20 +23,15 @@ import { colors, commonStyles, fontSize, radius, spacing } from '../theme.js';
 import { TabBar } from './TabBar.js';
 import { IconChevron, IconPlus } from './Icons.js';
 
-/** 每页条数：一屏大约能放 8 条，取 8 保证不需要滚动 */
-const PAGE_SIZE = 8;
-
 export function ContactsPage() {
   const { friends, requests, loaded, loading } = useFriends();
-  const [page, setPage] = useState(1);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     void refreshFriends();
   }, []);
 
-  const visible = friends.slice(0, page * PAGE_SIZE);
-  const hasMore = visible.length < friends.length;
+  const visible = friends;
 
   /** 点好友：进入私聊（没有会话则先创建） */
   const openChat = async (f: FriendItem) => {
@@ -107,7 +102,9 @@ export function ContactsPage() {
         完全不依赖父级的 flex 分配，在任何渲染时机下都稳定。
         标题栏 56px、底部导航 56px 是固定值，直接写死。
       */}
-      <view
+      <scroll-view
+        scroll-orientation="vertical"
+        enable-scroll={true}
         style={{
           position: 'absolute',
           left: 0,
@@ -116,6 +113,7 @@ export function ContactsPage() {
           bottom: '56px',
           display: 'flex',
           flexDirection: 'column',
+          justifyContent: 'flex-start',
           paddingLeft: spacing.lg,
           paddingRight: spacing.lg,
           paddingTop: spacing.md,
@@ -226,29 +224,9 @@ export function ContactsPage() {
           </view>
         ) : null}
 
-        {/* 加载更多 */}
-        {hasMore ? (
-          <view
-            style={{
-              width: '100%',
-              height: '44px',
-              borderRadius: radius.md,
-              borderWidth: '1px',
-              borderColor: colors.cardBorder,
-              display: 'flex',
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
-              marginTop: spacing.sm,
-            }}
-            bindtap={() => setPage((p) => p + 1)}
-          >
-            <text style={{ color: colors.textMuted, fontSize: fontSize.sm }}>
-              加载更多（{String(friends.length - visible.length)} 位待显示）
-            </text>
-          </view>
-        ) : null}
-      </view>
+        {/* 底部留白，避免最后一项被导航栏遮挡 */}
+        <view style={{ width: '100%', height: spacing.xl, flexShrink: 0 }} />
+      </scroll-view>
 
       {/* 底部导航 */}
       <TabBar

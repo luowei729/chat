@@ -710,6 +710,21 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * 广播通话原生事件给前端（全局事件名 'chatRtc'）
+     * 与 sendSocketEvent 同理：ICE 候选、连接状态是多次、持续的，
+     * 只能走全局事件，不能走一次性 Callback。
+     */
+    fun sendRtcEvent(map: com.lynx.react.bridge.JavaOnlyMap) {
+        try {
+            val args = com.lynx.react.bridge.JavaOnlyArray()
+            args.pushMap(map)
+            lynxView?.sendGlobalEvent("chatRtc", args)
+        } catch (_: Throwable) {
+            // 页面已销毁
+        }
+    }
+
     override fun onPause() {
         super.onPause()
         try {

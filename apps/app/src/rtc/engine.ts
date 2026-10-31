@@ -24,6 +24,7 @@ import type { IceServerConfig } from '@chat/shared';
 import { CALL_AUDIO_CONSTRAINTS } from '@chat/shared';
 import * as ws from '../api/ws.js';
 import { currentUserId } from '../store/auth.js';
+import { getGlobalEventEmitter, getNativeModule } from '../platform/globals.js';
 
 /* ------------------------------------------------------------------ */
 /* 类型声明（Lynx 原生模块与浏览器共用同一套形状）                        */
@@ -59,8 +60,8 @@ export interface PeerConnectionLike {
 export interface RtcProvider {
   /** 获取麦克风流 */
   getUserMedia: (constraints: unknown) => Promise<MediaStreamLike>;
-  /** 创建 PeerConnection */
-  createPeerConnection: (config: { iceServers: unknown[] }) => PeerConnectionLike;
+  /** 创建 PeerConnection（原生桥可用 config.peerId 建索引） */
+  createPeerConnection: (config: { iceServers: unknown[]; peerId?: string }) => PeerConnectionLike;
 }
 
 /* ------------------------------------------------------------------ */
@@ -131,6 +132,15 @@ const state: CallEngineState = {
 
 /** PeerConnection 表：userId → 连接 */
 const peerConnections = new Map<string, PeerConnectionLike>();
+
+/**
+ * 建连时顺带声明 peerId（原生桥需要它建索引）。
+ * 浏览器实现忽略该字段，原生实现用它做事件路由。
+ */
+export interface PeerConnectionConfig {
+  iceServers: unknown[];
+  peerId?: string;
+}
 
 /** 状态变化订阅者 */
 const listeners = new Set<(s: CallEngineState) => void>();
@@ -272,7 +282,7 @@ function createPeer(peerId: string, iceServers: IceServerConfig[]): PeerConnecti
   const existing = peerConnections.get(peerId);
   if (existing) return existing;
 
-  const pc = rtcProvider.createPeerConnection({ iceServers });
+  const pc = rtcProvider.createPeerConnection({ iceServers, peerId });
 
   // ICE 候选：逐条发给对方
   pc.onicecandidate = (event) => {
@@ -564,6 +574,252 @@ export function registerWebRtc(): boolean {
   registerRtcProvider({
     getUserMedia: (constraints) => g.navigator!.mediaDevices!.getUserMedia(constraints),
     createPeerConnection: (config) => new g.RTCPeerConnection!(config),
+  });
+  return true;
+}
+
+/* ------------------------------------------------------------------ */
+/* 原生桥接实现注册（Android / iOS / HarmonyOS 启动时调用）                 */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 注册原生通话桥（ChatRtc）
+ * ============================================================
+ * 为什么必须有它：
+ * Lynx 原生端没有 RTCPeerConnection（globalThis 里没有），
+ * registerWebRtc() 在真机上永远返回 false，
+ * rtcProvider 恒为 null → 接听直接报「当前设备不支持语音通话」。
+ * 原生 ChatRtcModule 把麦克风 + PeerConnection 桥出来，
+ * 这里包一层实现 RtcProvider，上层通话逻辑零改动。
+ *
+ * 事件映射：
+ *   原生全局事件 'chatRtc'：
+ *     {event:'ice', peerId, sdp, sdpMLineIndex, sdpMid}
+ *     {event:'conn', peerId, state}
+ *   翻译成 PeerConnectionLike 的 onicecandidate / ontrack /
+ *   onconnectionstatechange 三个回调，与浏览器语义对齐。
+ *
+ * 参数约定（与 ChatMedia 同哲学）：
+ *   复杂结构走 JSON 字符串，回调回 {ok:true,...} 对象。
+ */
+interface ChatRtcNative {
+  ensureAudio?: (cb: (r: unknown) => void) => void;
+  createPeer?: (peerId: string, iceJson: string, cb: (r: unknown) => void) => void;
+  createOffer?: (peerId: string, cb: (r: unknown) => void) => void;
+  setLocal?: (peerId: string, descJson: string, cb: (r: unknown) => void) => void;
+  setRemote?: (peerId: string, descJson: string, cb: (r: unknown) => void) => void;
+  createAnswer?: (peerId: string, cb: (r: unknown) => void) => void;
+  addIce?: (peerId: string, candJson: string, cb: (r: unknown) => void) => void;
+  setMuted?: (muted: boolean, cb: (r: unknown) => void) => void;
+  disposePeer?: (peerId: string, cb: (r: unknown) => void) => void;
+  disposeAll?: (cb: (r: unknown) => void) => void;
+}
+
+interface NativePeerEntry {
+  onicecandidate: ((e: { candidate: unknown | null }) => void) | null;
+  ontrack: ((e: { streams: MediaStreamLike[] }) => void) | null;
+  onconnectionstatechange: (() => void) | null;
+  connectionState: string;
+}
+
+/** peerId → 该连接的事件回调（建连时注册，挂断时注销） */
+const nativePeerHandlers = new Map<string, NativePeerEntry>();
+
+let nativeRtcSubscribed = false;
+
+function normalizeRtcResult(raw: unknown): Record<string, unknown> {
+  if (typeof raw === 'string') {
+    try {
+      return JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      return { ok: false, message: '原生返回格式异常' };
+    }
+  }
+  return (raw ?? {}) as Record<string, unknown>;
+}
+
+/** 原生调用转 Promise（8 秒兜底，避免无限挂起） */
+function callRtc<T = Record<string, unknown>>(
+  mod: ChatRtcNative,
+  method: keyof ChatRtcNative,
+  args: unknown[],
+): Promise<T> {
+  const fn = mod[method] as ((...a: unknown[]) => void) | undefined;
+  if (typeof fn !== 'function') {
+    return Promise.reject(new Error('当前版本不支持语音通话，请更新 App'));
+  }
+  return new Promise<T>((resolve, reject) => {
+    let done = false;
+    const timer = setTimeout(() => {
+      if (done) return;
+      done = true;
+      reject(new Error('通话组件响应超时，请重试'));
+    }, 8000);
+    try {
+      fn(...args, (raw: unknown) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        const r = normalizeRtcResult(raw);
+        if (r['ok'] === true) resolve(r as unknown as T);
+        else reject(new Error(typeof r['message'] === 'string' ? r['message'] : '通话操作失败'));
+      });
+    } catch (e) {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      reject(e instanceof Error ? e : new Error('通话操作失败'));
+    }
+  });
+}
+
+/** 订阅原生 'chatRtc' 全局事件（模块级单例） */
+function ensureNativeRtcSubscribed(): void {
+  if (nativeRtcSubscribed) return;
+  const emitter = getGlobalEventEmitter();
+  if (!emitter) return;
+  nativeRtcSubscribed = true;
+  try {
+    emitter.addListener('chatRtc', (...args: unknown[]) => {
+      const p = args[0] as Record<string, unknown> | undefined;
+      if (!p) return;
+      const peerId = typeof p['peerId'] === 'string' ? (p['peerId'] as string) : '';
+      const h = nativePeerHandlers.get(peerId);
+      if (!h) return;
+      if (p['event'] === 'ice') {
+        h.onicecandidate?.({
+          candidate: { sdp: p['sdp'], sdpMLineIndex: p['sdpMLineIndex'], sdpMid: p['sdpMid'] },
+        });
+      } else if (p['event'] === 'conn') {
+        const st = typeof p['state'] === 'string' ? (p['state'] as string) : '';
+        // 'track' 表示远端音频到达，等价于已连接（原生音频自动播放）
+        h.connectionState = st === 'track' ? 'connected' : st;
+        h.onconnectionstatechange?.();
+        if (st === 'track') h.ontrack?.({ streams: [] });
+      }
+    });
+  } catch {
+    nativeRtcSubscribed = false;
+  }
+}
+
+/**
+ * 注册原生通话实现
+ * @returns true=已接管（Android/iOS/鸿蒙），false=本端没有 ChatRtc（走浏览器兜底）
+ */
+export function registerNativeRtc(): boolean {
+  let mod: ChatRtcNative | null = null;
+  try {
+    mod = getNativeModule<ChatRtcNative>('ChatRtc');
+  } catch {
+    mod = null;
+  }
+  if (!mod?.ensureAudio) return false;
+  ensureNativeRtcSubscribed();
+  const m = mod;
+
+  registerRtcProvider({
+    getUserMedia: async () => {
+      await callRtc(m, 'ensureAudio', []);
+      // 原生音频轨道没有 JS 可操作的 MediaStream，返回等价占位。
+      // engine.ts 的 setMuted() 会写 track.enabled，这里用访问器
+      // 透传给原生；stop() 释放整通电话的原生资源。
+      let mutedState = false;
+      const track: MediaStreamTrackLike = {
+        get enabled() {
+          return !mutedState;
+        },
+        set enabled(v: boolean) {
+          mutedState = !v;
+          m.setMuted?.(!v, () => undefined);
+        },
+        stop: () => {
+          m.disposeAll?.(() => undefined);
+        },
+      };
+      const stream: MediaStreamLike = {
+        getAudioTracks: () => [track],
+        getTracks: () => [track],
+      };
+      return stream;
+    },
+    createPeerConnection: (config) => {
+      const cfg = config as { iceServers?: unknown; peerId?: string };
+      const peerId =
+        typeof cfg.peerId === 'string' && cfg.peerId.length > 0
+          ? cfg.peerId
+          : `peer-${Date.now().toString(36)}`;
+      const iceJson = JSON.stringify({ iceServers: cfg.iceServers ?? [] });
+      // 原生建连是异步的，但底层是单线程串行队列，
+      // 后续的 offer/answer/set/add 操作一定排在 create 之后执行，
+      // 所以这里不需要等 create 完成。
+      // 失败只记录：上层 offer 失败会走 error 提示。
+      void callRtc(m, 'createPeer', [peerId, iceJson]).catch(() => undefined);
+
+      const entry: NativePeerEntry = {
+        onicecandidate: null,
+        ontrack: null,
+        onconnectionstatechange: null,
+        connectionState: 'new',
+      };
+      nativePeerHandlers.set(peerId, entry);
+
+      const pc: PeerConnectionLike = {
+        get connectionState() {
+          return entry.connectionState;
+        },
+        set connectionState(_v: string) {
+          // 只读：状态由原生事件驱动
+        },
+        get onicecandidate() {
+          return entry.onicecandidate;
+        },
+        set onicecandidate(v) {
+          entry.onicecandidate = v;
+        },
+        get ontrack() {
+          return entry.ontrack;
+        },
+        set ontrack(v) {
+          entry.ontrack = v;
+        },
+        get onconnectionstatechange() {
+          return entry.onconnectionstatechange;
+        },
+        set onconnectionstatechange(v) {
+          entry.onconnectionstatechange = v;
+        },
+        createOffer: async () => {
+          const r = await callRtc<{ type: string; sdp: string }>(m, 'createOffer', [peerId]);
+          return { type: r.type, sdp: r.sdp };
+        },
+        createAnswer: async () => {
+          const r = await callRtc<{ type: string; sdp: string }>(m, 'createAnswer', [peerId]);
+          return { type: r.type, sdp: r.sdp };
+        },
+        setLocalDescription: async (desc: unknown) => {
+          const d = desc as { type: string; sdp: string };
+          await callRtc(m, 'setLocal', [peerId, JSON.stringify({ type: d.type, sdp: d.sdp })]);
+        },
+        setRemoteDescription: async (desc: unknown) => {
+          const d = desc as { type: string; sdp: string };
+          await callRtc(m, 'setRemote', [peerId, JSON.stringify({ type: d.type, sdp: d.sdp })]);
+        },
+        addIceCandidate: async (candidate: unknown) => {
+          const c = candidate as { sdp?: string; sdpMLineIndex?: number; sdpMid?: string };
+          await callRtc(m, 'addIce', [peerId, JSON.stringify(c)]);
+        },
+        addTrack: () => {
+          // 原生在 createPeer 时已把本地轨道加进连接，无需重复添加
+          return {};
+        },
+        close: () => {
+          nativePeerHandlers.delete(peerId);
+          m.disposePeer?.(peerId, () => undefined);
+        },
+      };
+      return pc;
+    },
   });
   return true;
 }

@@ -192,6 +192,9 @@ class ChatRtcModule : LynxModule {
                     override fun onIceCandidate(c: IceCandidate) {
                         emitIce(peerId, c)
                     }
+                    override fun onIceCandidatesRemoved(c: Array<IceCandidate>) {
+                        // 候选被清理：ICE 会重传补齐，无需处理
+                    }
                     override fun onConnectionChange(newState: PeerConnection.PeerConnectionState) {
                         emitConn(peerId, newState.name.lowercase())
                     }

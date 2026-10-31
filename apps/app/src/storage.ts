@@ -78,8 +78,24 @@ export function hydrateStorage(): Promise<void> {
       setTimeout(finish, 1500);
       try {
         native.dump!((raw) => {
-          const obj = raw as Record<string, unknown> | null;
-          if (obj && typeof obj === 'object') {
+          /**
+           * 原生 dump 回的是 JSON 字符串（见 ChatStoreModule 注释：
+           * JavaOnlyMap 嵌套在部分 ROM 上会丢字段，字符串最稳）。
+           * 之前这里直接把 raw 当对象用，string 恒不满足
+           * `typeof obj === 'object'`，内存缓存永远是空的 ——
+           * 表现为「每次重启都要重新登录」。先归一化再灌入。
+           */
+          let obj: Record<string, unknown> | null = null;
+          if (typeof raw === 'string') {
+            try {
+              obj = JSON.parse(raw) as Record<string, unknown>;
+            } catch {
+              obj = null;
+            }
+          } else if (raw && typeof raw === 'object') {
+            obj = raw as Record<string, unknown>;
+          }
+          if (obj) {
             for (const k of Object.keys(obj)) {
               const v = obj[k];
               if (typeof v === 'string' && v !== '') memoryStore.set(k, v);

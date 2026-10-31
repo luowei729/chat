@@ -128,21 +128,24 @@ class ChatMediaModule : LynxModule {
             MediaBridge.fail(callback, "录音时间太短")
             return
         }
-        MediaBridge.ok(
-            callback,
-            mapOf(
-                "file" to JavaOnlyMap.from(
-                    mapOf(
-                        "uri" to result.file.absolutePath,
-                        "name" to result.file.name,
-                        "mime" to "audio/mp4",
-                        "size" to result.file.length(),
-                        "durationMs" to result.durationMs,
-                        "waveform" to result.waveform,
-                    ),
-                ),
-            ),
-        )
+
+        /**
+         * 用 JSON 字符串回传（不能用嵌套 JavaOnlyMap）
+         * 见 MediaBridge.emitUris 的说明：嵌套 Map/List 跨桥会丢。
+         */
+        val fileJson = org.json.JSONObject().apply {
+            put("uri", result.file.absolutePath)
+            put("name", result.file.name)
+            put("mime", "audio/mp4")
+            put("size", result.file.length())
+            put("durationMs", result.durationMs)
+            put("waveform", org.json.JSONArray(result.waveform))
+        }
+        val payload = org.json.JSONObject().apply {
+            put("ok", true)
+            put("fileJson", fileJson.toString())
+        }
+        callback.invoke(payload.toString())
     }
 
     @LynxMethod

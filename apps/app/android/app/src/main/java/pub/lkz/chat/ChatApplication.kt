@@ -13,6 +13,7 @@ import com.lynx.tasm.LynxEnv
 import com.lynx.tasm.service.LynxServiceCenter
 import org.webrtc.PeerConnectionFactory
 import pub.lkz.chat.media.ChatMediaModule
+import pub.lkz.chat.media.ChatSocketModule
 import pub.lkz.chat.media.ChatStoreModule
 import pub.lkz.chat.module.ChatHostModule
 import java.io.File
@@ -151,6 +152,9 @@ class ChatApplication : Application() {
         // 键值存储：Lynx 引擎本身没有 Storage API，令牌/主题/草稿
         // 必须靠原生持久化，否则每次重启都要重新登录
         LynxEnv.inst().registerModule("ChatStore", ChatStoreModule::class.java)
+        // WebSocket：Lynx 引擎完全没有长连接能力（连 WebSocket 全局对象都没有
+        // 可用实现），必须由宿主提供，否则消息不推送、通话收不到
+        LynxEnv.inst().registerModule("ChatSocket", ChatSocketModule::class.java)
     }
 
     /**

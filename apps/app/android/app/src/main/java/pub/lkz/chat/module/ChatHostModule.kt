@@ -201,9 +201,20 @@ class ChatHostModule : LynxModule {
      * 前端注册后，点小窗的挂断会回调到这里再转给 JS 结束通话。
      */
     @LynxMethod
-    fun setFloatingHangupHandler(handler: Any?) {
-        // Lynx 不能直接传函数，这里用「置位」语义：
-        // 挂断时发全局事件 call.hangup，前端监听后自行 stopCall。
+    fun setFloatingHangupHandler() {
+        /**
+         * 【必须无参】
+         * ------------------------------------------------------------
+         * 之前签名是 `handler: Any?`，Lynx 反射生成方法描述符时会抛
+         *   RuntimeException: Got unknown param class: Object
+         * 后果不是「这一个方法不可用」，而是**整个 ChatHost 模块**
+         * 注册失败 —— setCanGoBack / setCallState / 悬浮窗 / 返回键
+         * 全部失效，而且日志里只报一次，极难发现。
+         *
+         * Lynx 的 @LynxMethod 只支持基本类型 / String / Map / Array
+         * / Callback。要传「回调」，正确做法是置位 + 全局事件，
+         * 所以这里不需要任何参数。
+         */
         FloatingCallWindow.onHangup = {
             val activity = MainActivity.current
             try {

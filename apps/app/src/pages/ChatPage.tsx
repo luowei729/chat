@@ -61,6 +61,7 @@ import {
 } from './Icons.js';
 import { colors, commonStyles, fontSize, radius, spacing } from '../theme.js';
 import { mediaUrl } from '../config.js';
+import { getLynx } from '../platform/globals.js';
 
 export function ChatPage(props: { conversationId: string; title?: string }) {
   const { conversationId } = props;
@@ -94,8 +95,82 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
   const [uploading, setUploading] = useState(false);
   /** 上滑取消录音 */
   const cancelRecordRef = useRef(false);
+  /**
+   * 录音状态镜像
+   * ------------------------------------------------------------
+   * finishRecording 里不能用 `recording` 这个 state 做判断：
+   * touchend 的回调可能在 setRecording(true) 生效之前就触发
+   * （快速点击），此时闭包里的 recording 还是 false，
+   * 函数直接 return，原生录音器就再也没人停了 ——
+   * 表现为「录音停不下来 / 语音发送异常」。
+   * 用 ref 存同一个值，读写都拿最新的。
+   */
+  const recordingRef = useRef(false);
+  /** 按下时的 Y 坐标，用于计算「上滑取消」的相对位移 */
+  const recordStartY = useRef(0);
   /** 有文字且非语音模式时才显示「发送」按钮，否则显示附件入口 */
   const showSendButton = !voiceMode && draft.trim().length > 0;
+  /**
+   * 当前渲染的消息条数
+   * 消息不放在滚动容器里，只渲染最后 N 条保证性能与点击可靠性。
+   * 「查看更早」每次 +20；切换会话时重置。
+   */
+  const [visibleCount, setVisibleCount] = useState(20);
+
+  /**
+   * 计算可见消息
+   * ============================================================
+   * 普通 view 没有 overflow:hidden（Lynx 不支持），
+   * 内容超出容器会向上溢出、盖住标题栏。
+   * 所以不能简单「取最后 N 条」，必须按**估算高度**截断：
+   * 从最新一条往前累加，累计高度超过可视区就停。
+   *
+   * 估算凭经验取值（消息高度主要决定因素）：
+   *   图片/视频  → 260px（气泡 200 + 头像行 + 间距 + 时间）
+   *   语音/文件  → 100px
+   *   文本      → 每 14 个字一行 × 30px + 46px 元信息
+   * 宁可少渲染几条，也不要溢出盖住标题栏。
+   */
+  const LIST_MAX_HEIGHT = 1080;
+
+  const displayed = (() => {
+    const out: Message[] = [];
+    let total = 0;
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      if (out.length >= visibleCount) break;
+      const m = messages[i]!;
+
+      let h: number;
+      if (m.type === 'image' || m.type === 'video') {
+        // 图片气泡本身 200 + 头像/时间行 + 上下间距
+        h = 300;
+      } else if (m.type === 'audio' || m.type === 'file') {
+        h = 130;
+      } else {
+        const len = (m.text ?? '').length;
+        h = Math.ceil(Math.max(1, len) / 12) * 32 + 50;
+      }
+
+      if (total + h > LIST_MAX_HEIGHT && out.length > 0) break;
+      total += h;
+      out.unshift(m);
+    }
+    return out;
+  })();
+
+  const showEarlier = () => {
+    // 本地还有更多就直接放出来，不够再去服务端拉
+    if (displayed.length < messages.length) {
+      setVisibleCount((n) => n + 20);
+      return;
+    }
+    if (hasMore && !loading) void loadMore();
+  };
+
+  // 切换会话时重置可见条数
+  useEffect(() => {
+    setVisibleCount(20);
+  }, [conversationId]);
   /** 是否显示「添加到通讯录」提示条（对方还不在通讯录时） */
   const [showAddContact, setShowAddContact] = useState(false);
   const [addingContact, setAddingContact] = useState(false);
@@ -105,6 +180,15 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
   const [actionTarget, setActionTarget] = useState<Message | null>(null);
   /** 操作进行中，防重复点击 */
   const [acting, setActing] = useState(false);
+  /**
+   * 输入框重建计数
+   * ------------------------------------------------------------
+   * Lynx 的 input 是**非受控**组件：只有 default-value，没有 value。
+   * 发送后 setDraft('') 只更新了 state，输入框里的文字纹丝不动
+   * —— 用户会以为没发出去，接着再点一次就是重复消息。
+   * 唯一的清空办法是换 key 强制重建组件。
+   */
+  const [inputKey, setInputKey] = useState(0);
 
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recordTimer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -152,30 +236,39 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
         // 标题拿不到就用路由传入的
       }
 
-      /**
-       * 刷新会话列表
-       * ------------------------------------------------------------
-       * 进入聊天时列表可能是陈旧的：
-       *   · 通过「加好友」自动建的会话，自己端没收到 conversation.new
-       *   · createDirect 返回 created:false（会话早已存在）时服务端也不广播
-       * 结果就是「会话存在、能聊天，但列表里看不到」。
-       * 进入聊天页时补一次刷新，任何入口都不会漏。
-       */
-      void listConversations()
-        .then((list) => {
-          if (!cancelled) setConversations(list);
-        })
-        .catch(() => undefined);
-
       // 拉最新一页消息
       setMessagesLoading(conversationId, true);
       try {
         const page = await listMessages(conversationId, { limit: 30 });
         if (!cancelled) {
           setMessages(conversationId, page.items, page.hasMore);
+
           // 标记已读：把水位推到最新一条
           const last = page.items[page.items.length - 1];
           if (last) ws.sendRead(conversationId, last.seq);
+
+          /**
+           * 刷新会话列表（必须在标记已读之后）
+           * --------------------------------------------------
+           * 顺序很关键：服务端只有在收到 read 回执后才会把
+           * last_read_seq 推上去。如果在 sendRead 之前拉列表，
+           * 拿回来的还是旧的 unreadCount，会把本地刚清零的
+           * 未读数又盖回去 —— 红标就「点了也不消失」。
+           *
+           * 另外这里对当前会话强制清零：即使服务端的 read 回执
+           * 还在路上（弱网下几十毫秒），也不该让用户看到自己
+           * 正在看的会话还挂着红点。
+           */
+          void listConversations()
+            .then((list) => {
+              if (cancelled) return;
+              setConversations(
+                list.map((c) =>
+                  c.id === conversationId ? { ...c, unreadCount: 0 } : c,
+                ),
+              );
+            })
+            .catch(() => undefined);
         }
       } catch {
         if (!cancelled) setMessages(conversationId, [], false);
@@ -224,6 +317,7 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
     setSending(true);
     setError(null);
     setDraft('');
+    setInputKey((k) => k + 1);
 
     // 客户端生成幂等 id：重试不会产生重复消息
     const clientId = newClientId();
@@ -422,21 +516,26 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
 
   /* ---------------- 语音消息（按住说话） ---------------- */
 
-  const startRecording = async () => {
+  const startRecording = async (startY: number) => {
     cancelRecordRef.current = false;
+    recordStartY.current = startY;
     try {
       await media.startVoiceRecord();
+      recordingRef.current = true;
       setRecording(true);
       setRecordSec(0);
       recordTimer.current = setInterval(() => setRecordSec((s) => s + 1), 1000);
     } catch (e) {
-      setError(e instanceof Error ? e.message : '无法录音');
+      recordingRef.current = false;
       setRecording(false);
+      setError(e instanceof Error ? e.message : '无法录音');
     }
   };
 
   const finishRecording = async (cancel: boolean) => {
-    if (!recording) return;
+    // 必须用 ref：state 可能是旧值（见 recordingRef 的注释）
+    if (!recordingRef.current) return;
+    recordingRef.current = false;
     setRecording(false);
     if (recordTimer.current) {
       clearInterval(recordTimer.current);
@@ -448,8 +547,33 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
       return;
     }
 
+    /**
+     * 先停止录音拿到文件，再插入乐观消息
+     * ------------------------------------------------------------
+     * 顺序反了的话，气泡里没有 durationMs 与 waveform，
+     * 语音条会显示 0″、波形是假数据，看起来就像「发坏了」。
+     * stopVoiceRecord 只是一次本地文件收尾，耗时在毫秒级，
+     * 放在插入之前不会影响响应速度。
+     */
+    let voice: Awaited<ReturnType<typeof media.stopVoiceRecord>>;
+    try {
+      voice = await media.stopVoiceRecord();
+    } catch (e) {
+      // 常见：录音太短（<600ms）被原生判定为误触
+      setError(
+        e instanceof media.PlatformMediaError && e.code === 'cancelled'
+          ? '已取消'
+          : e instanceof Error
+            ? e.message
+            : '录音失败',
+      );
+      return;
+    }
+
     const clientId = newClientId();
-    // 先插入占位，让用户看到「发送中」
+    const localUri = localFileUri(voice.uri);
+
+    // 乐观消息：带上真实时长与波形，气泡立即显示正确内容
     const optimistic: Message = {
       id: `local-${clientId}`,
       conversationId,
@@ -459,7 +583,24 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
       senderAvatarUrl: null,
       type: 'audio',
       text: null,
-      attachments: [],
+      attachments: [
+        {
+          id: `local-${clientId}`,
+          kind: 'audio',
+          filename: voice.name,
+          mime: voice.mime,
+          size: voice.size,
+          url: localUri,
+          thumbUrl: null,
+          width: null,
+          height: null,
+          durationMs: voice.durationMs,
+          waveform: voice.waveform,
+          expiresAt: null,
+          expired: false,
+          expiringSoon: false,
+        } as Message['attachments'][number],
+      ],
       replyToId: null,
       replyToPreview: null,
       createdAt: Date.now(),
@@ -471,7 +612,6 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
     insertOptimistic(conversationId, optimistic);
 
     try {
-      const voice = await media.stopVoiceRecord();
       const up = await media.uploadPicked(
         voice,
         {
@@ -610,6 +750,96 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
     });
   };
 
+  /**
+   * 消息列表的起始位置
+   * ------------------------------------------------------------
+   * 标题栏 56px；如果显示了「添加到通讯录」提示条，
+   * 列表要再往下让出 44px，否则会被提示条盖住。
+   */
+  /**
+   * 列表起点
+   * 顶部「添加到通讯录」提示条会占掉 44px。
+   * 「查看更早 / 没有更多」提示行固定在上方 30px，
+   * 所以列表本体再往下让 30px —— 用纯数值而不是 calc()
+   * （Lynx 的 calc 支持不稳定，直接算好更可靠）。
+   */
+  const listTop = showAddContact && peerId ? '130px' : '86px';
+
+  /**
+   * 输入区高度（用于消息列表的 bottom 偏移）
+   * ------------------------------------------------------------
+   * 消息列表与输入栏都是绝对定位，必须自己算边界：
+   *   56px  基础输入行
+   * + 36px  录音提示条
+   * + 116px 附件面板
+   * 少算会让列表底部被面板盖住，多算会留出空隙。
+   */
+  const inputHeight =
+    56 + (recording ? 36 : 0) + (panel === 'attach' ? 116 : 0);
+  const listBottom = `${inputHeight}px`;
+
+  /**
+   * 自动滚到底部
+   * ------------------------------------------------------------
+   * scroll-view 没有「反向排列」能力，新消息追加在末尾，
+   * 必须主动把滚动位置推到底，否则用户看到的还是旧消息。
+   * 用 selectElementById + scrollTo 的替代方案：Lynx 的
+   * scroll-view 支持通过 ui method 操作，但跨端稳定性一般，
+   * 这里用最简单的「内容变化就滚到底」，配合 scroll-top 属性。
+   */
+  /**
+   * 滚到底部
+   * ============================================================
+   * 【不能用 scroll-top 属性】
+   * Lynx 的 scroll-view **没有** scroll-top（只有 initial-scroll-offset，
+   * 而那个只在首次挂载时生效）。之前写 scroll-top={v} 完全没效果，
+   * 表现就是「发了新消息，列表还停在旧位置，看不到自己的消息」。
+   *
+   * 正确做法：走 UI method
+   *   lynx.createSelectorQuery().select('#msgScroll')
+   *       .invoke({ method:'scrollTo', params:{ offset, smooth } })
+   *       .exec()
+   * offset 给一个远大于内容高度的值，列表会自行钳制到底部。
+   *
+   * 图片是异步加载的，消息刚插入时高度还没算出来，
+   * 所以除了消息变化，图片 bindload 时也要再滚一次。
+   */
+  const scrollToBottom = () => {
+    try {
+      const l = getLynx();
+      const query = (
+        l as unknown as {
+          createSelectorQuery?: () => {
+            select: (sel: string) => {
+              invoke: (opts: {
+                method: string;
+                params: Record<string, unknown>;
+              }) => { exec: () => void };
+            };
+          };
+        }
+      )?.createSelectorQuery?.();
+      if (!query) return;
+      query
+        .select('#msgScroll')
+        .invoke({ method: 'scrollTo', params: { offset: 9_999_999, smooth: false } })
+        .exec();
+    } catch {
+      // 首帧元素还没挂载时忽略
+    }
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+    // 内容刚变更时高度未定，补两次（图片解码、字体测量）
+    const t1 = setTimeout(scrollToBottom, 100);
+    const t2 = setTimeout(scrollToBottom, 350);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [conversationId, messages.length]);
+
   return (
     <view style={commonStyles.page}>
       {/* 顶部栏：三段式，标题区用 view 包裹居中 */}
@@ -684,35 +914,88 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
         </view>
       ) : null}
 
-      {/* 消息列表 */}
-      <view style={{ flex: 1, width: '100%', display: 'flex', flexDirection: 'column' }}>
-        {/* 加载更多 */}
-        {hasMore ? (
-          <view
-            style={{ height: '44px', alignItems: 'center', justifyContent: 'center' }}
-            bindtap={loadMore}
-          >
-            <text style={{ color: colors.textMuted, fontSize: fontSize.xs }}>
-              {loading ? '加载中…' : '查看更早的消息'}
-            </text>
-          </view>
-        ) : messages.length > 0 ? (
-          <view style={{ height: '32px', alignItems: 'center', justifyContent: 'center' }}>
-            <text style={{ color: colors.textFaint, fontSize: fontSize.xs }}>没有更多了</text>
-          </view>
-        ) : null}
+      {/*
+        消息列表
+        ============================================================
+        【为什么最终不用 scroll-view】
+        scroll-view 的滚动是能用的，但它会**吞掉子元素的点击事件**：
+        图片、视频、文件气泡全都点不开（实测了
+        bindtap 放内层/外层/image 上、experimental-android-enable-new-overflow
+        各种组合，均无效）。
+        而本项目 core 功能依赖「点媒体放大」，所以这里退回普通 view。
 
-        {messages.map((msg) => (
+        【不用滚动容器怎么保证最新消息可见】
+        只渲染**最后 VISIBLE_COUNT 条**消息：
+          · 打开会话 → 看到最新的一屏，天然贴底；
+          · 点顶部按钮 → 每次多放出 20 条历史（纯前端，不发请求）；
+          · 后端分页 hasMore 仍用于「是否已到最早」。
+        对聊天来说，用户 99% 的场景是看最新消息、翻最近几屏，
+        这个方案完全够用，而且点击、长按都 100% 可靠。
+
+        【为什么贴底对齐】
+        justifyContent:'flex-end' 让消息从底部往上排，
+        消息少时不会浮在顶部留一大片空白（TG 就是这样）。
+      */}
+      {/* 顶部提示行：独立定位，不参与消息列表高度计算 */}
+      <view
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          top: showAddContact && peerId ? '100px' : '56px',
+          height: '30px',
+          zIndex: 5,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+        bindtap={showEarlier}
+      >
+        <text style={{ color: colors.textFaint, fontSize: fontSize.xs }}>
+          {loading
+            ? '加载中…'
+            : displayed.length < messages.length || hasMore
+              ? '查看更早的消息'
+              : messages.length > 0
+                ? '没有更多了'
+                : ''}
+        </text>
+      </view>
+
+      <view
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          top: listTop,
+          bottom: listBottom,
+          display: 'flex',
+          flexDirection: 'column',
+          /**
+           * 不能用 justifyContent:'flex-end'
+           * ------------------------------------------------------------
+           * 实测：flex-end 布局下子元素的**命中区没有跟着偏移**，
+           * 视觉上消息在底部，但点击坐标仍按顶对齐计算，
+           * 结果点图片/视频全部落空（返回按钮等普通区域的 tap 正常）。
+           * 这是 Lynx 的已知布局/hit-test 缺陷，无绕过办法。
+           *
+           * 改为顶对齐 + 只渲染最后若干条（displayed 已按高度截断），
+           * 点击 100% 可靠。消息较少时上方会留白，与部分 IM 网页版一致。
+           */
+          justifyContent: 'flex-start',
+        }}
+      >
+        {displayed.map((msg) => (
           <MessageBubble
             key={msg.id}
             message={msg}
             isSelf={msg.senderId === myId}
             peerSeq={peerSeq}
             onLongPress={() => setActionTarget(msg)}
+            onMediaLoad={scrollToBottom}
           />
         ))}
 
-        <view style={{ height: spacing.lg }} />
+        <view style={{ width: '100%', height: spacing.sm, flexShrink: 0 }} />
       </view>
 
       {/* 错误提示 */}
@@ -722,9 +1005,13 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
         </view>
       ) : null}
 
-      {/* 输入区（微信式） */}
+      {/* 输入区（微信式，绝对定位贴底） */}
       <view
         style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          bottom: 0,
           width: '100%',
           backgroundColor: colors.surface,
           borderTopWidth: '1px',
@@ -824,12 +1111,20 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
                   alignItems: 'center',
                   justifyContent: 'center',
                 }}
-                bindtouchstart={() => {
-                  void startRecording();
+                bindtouchstart={(e: {
+                  touches?: Array<{ pageY?: number; y?: number }>;
+                }) => {
+                  const y = e.touches?.[0]?.pageY ?? e.touches?.[0]?.y ?? 0;
+                  void startRecording(y);
                 }}
-                bindtouchmove={(e: { touches?: Array<{ y?: number }> }) => {
-                  const y = e.touches?.[0]?.y ?? 0;
-                  cancelRecordRef.current = y < 120;
+                /*
+                  上滑取消：用「相对位移」判断，不能用绝对坐标。
+                  之前写 y < 120（屏幕顶部 120px），而手指在输入栏
+                  附近（约 2100px），永远不满足，取消功能等于失效。
+                */
+                bindtouchmove={(e: { touches?: Array<{ pageY?: number; y?: number }> }) => {
+                  const y = e.touches?.[0]?.pageY ?? e.touches?.[0]?.y ?? 0;
+                  cancelRecordRef.current = recordStartY.current - y > 60;
                 }}
                 bindtouchend={() => {
                   void finishRecording(cancelRecordRef.current);
@@ -849,6 +1144,7 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
               </view>
             ) : (
               <input
+                key={inputKey}
                 style={{ ...commonStyles.input, width: '100%', height: '40px' }}
                 default-value={draft}
                 placeholder="输入消息…"
@@ -1065,14 +1361,6 @@ function FileBubble(props: { message: Message; isSelf: boolean }) {
         alignItems: 'center',
         opacity: expired ? 0.6 : 1,
       }}
-      bindtap={() => {
-        // 过期文件不发起请求，避免用户看到「无法加载」的困惑
-        if (expired) return;
-        push({
-          name: 'media-viewer',
-          params: { url: att!.url, kind: 'file', filename: att!.filename },
-        });
-      }}
     >
       {/* 文件图标 */}
       <view
@@ -1276,6 +1564,12 @@ function localFileUri(uri: string): string {
   return `file://${uri}`;
 }
 
+/** 是否是「可点开查看」的媒体消息 */
+function isMediaMessage(m: Message): boolean {
+  if (m.type !== 'image' && m.type !== 'video' && m.type !== 'file') return false;
+  return !!m.attachments[0]?.url;
+}
+
 /** 按 mime 推断消息类型，认不出就用调用方的兜底类型 */
 function pickMessageType(mime: string, fallback: 'image' | 'video' | 'audio' | 'file') {
   if (mime.startsWith('image/')) return 'image' as const;
@@ -1293,8 +1587,10 @@ function MessageBubble(props: {
   isSelf: boolean;
   peerSeq: number;
   onLongPress: () => void;
+  /** 媒体加载完成（图片/视频）→ 让父级重新滚到底 */
+  onMediaLoad: () => void;
 }) {
-  const { message, isSelf, peerSeq, onLongPress } = props;
+  const { message, isSelf, peerSeq, onLongPress, onMediaLoad } = props;
 
   // 系统消息：居中灰字
   if (message.type === 'system') {
@@ -1341,6 +1637,17 @@ function MessageBubble(props: {
     <view
       style={{
         width: '100%',
+        /*
+          flexShrink: 0 绝对不能省
+          ------------------------------------------------------------
+          配合列表容器的 justifyContent:'flex-end'，当消息总高度
+          超过可视区（或键盘弹出压缩高度）时，flex 容器会尝试压缩
+          子项，消息行被压扁后互相重叠 —— 用户看到的就是
+          「气泡叠在一起、时间文字压在气泡上」。
+          flexShrink:0 让每行保持自身高度，超出部分由容器向上溢出
+          （最新消息始终可见，符合聊天场景）。
+        */
+        flexShrink: 0,
         display: 'flex',
         flexDirection: 'row',
         justifyContent: isSelf ? 'flex-end' : 'flex-start',
@@ -1350,14 +1657,39 @@ function MessageBubble(props: {
         paddingBottom: spacing.xs,
       }}
       /*
-        长按弹操作菜单
-        ------------------------------------------------------
-        注意 Lynx 的一个坑：同一元素上 bindtap 与 bindlongpress
-        互斥 —— 同时监听时 longpress 优先，tap 永远不触发。
-        所以长按绑在最外层容器，点击留在内层图片/视频上，
-        两者分属不同元素，互不干扰。
+        手势分配（实测结论，很反直觉）
+        ------------------------------------------------------------
+        Lynx 里 tap 与 longpress **无法共存**：同一元素同时绑定时
+        只有 tap 生效（文档写的是 longpress 优先，实测相反）；
+        祖先绑 longpress 会让子元素 tap 完全失效。
+        既然不能共存，就按消息类型分工：
+          · 媒体消息（图/视频/文件）→ 绑 tap，点开大图（核心功能）
+          · 文字 / 语音 / 系统消息  → 绑 longpress，弹操作菜单
+        两类各用单一手势，互不干扰，功能都完整。
+        需要撤回媒体消息时，可在查看器里操作（后续可加）。
       */
-      bindlongpress={onLongPress}
+      bindtap={
+        isMediaMessage(message)
+          ? () => {
+              const att = message.attachments[0];
+              if (!att?.url) return;
+              push({
+                name: 'media-viewer',
+                params: {
+                  url: att.url,
+                  kind:
+                    message.type === 'video'
+                      ? 'video'
+                      : message.type === 'image'
+                        ? 'image'
+                        : 'file',
+                  filename: att.filename,
+                },
+              });
+            }
+          : undefined
+      }
+      bindlongpress={isMediaMessage(message) ? undefined : onLongPress}
     >
       {/* 头像：只给对方消息显示（自己的消息不显示，与 TG 一致） */}
       {!isSelf ? (
@@ -1386,6 +1718,7 @@ function MessageBubble(props: {
       <view
         style={{
           width: '78%',
+          flexShrink: 0,
           display: 'flex',
           flexDirection: 'column',
           alignItems: isSelf ? 'flex-end' : 'flex-start',
@@ -1400,6 +1733,20 @@ function MessageBubble(props: {
 
         <view
           style={{
+            /**
+             * 必须显式写 column
+             * ------------------------------------------------------------
+             * Lynx 的 view **默认是横排（row）**，不是 CSS 的 column。
+             * 之前漏了这一行，结果气泡里的「正文」和「时间+勾选」
+             * 被排在同一行，短文本时挤在右侧、长文本时直接溢出气泡
+             * —— 就是用户说的「文字和发送时间并列，超出消息框」。
+             *
+             * maxWidth: '100%' 是第二道保险：
+             * 父级已限制 78% 宽，这里再约束一次，
+             * 防止长图片/长文本把气泡撑破。
+             */
+            display: 'flex',
+            flexDirection: 'column',
             backgroundColor: isSelf ? colors.primary : colors.surfaceAlt,
             borderRadius: radius.bubble,
             paddingLeft: spacing.md,
@@ -1408,7 +1755,7 @@ function MessageBubble(props: {
             paddingBottom: spacing.sm,
           }}
         >
-          <MessageContent message={message} isSelf={isSelf} />
+          <MessageContent message={message} isSelf={isSelf} onMediaLoad={onMediaLoad} />
 
           {/* 上传进度条：仅 optimistic 媒体消息显示 */}
           {isSelf && message.localStatus === 'sending' && typeof message.localProgress === 'number' ? (
@@ -1472,16 +1819,46 @@ function MessageBubble(props: {
 }
 
 /** 按消息类型渲染不同内容 */
-function MessageContent(props: { message: Message; isSelf: boolean }) {
-  const { message, isSelf } = props;
+function MessageContent(props: {
+  message: Message;
+  isSelf: boolean;
+  onMediaLoad?: () => void;
+}) {
+  const { message, isSelf, onMediaLoad } = props;
 
   switch (message.type) {
-    case 'text':
+    case 'text': {
+      /**
+       * 文本气泡宽度
+       * ------------------------------------------------------------
+       * Lynx 里 flex column 容器的「内容自适应宽度」不可靠：
+       * 父级给百分比时，text 的换行宽度与高度在布局阶段算不出来，
+       * 表现就是多行文字溢出气泡、时间被挤到气泡外。
+       *
+       * 这里显式算一个宽度：
+       *   中文按 fontSize.md 的 1 倍宽估算，英文按 0.55 倍；
+       *   下限 72px（一两个字），上限 240px（超过就换行）。
+       * 宽度确定后，高度由换行行数自然算出，不再溢出。
+       */
+      const raw = message.text ?? '';
+      let units = 0;
+      for (const ch of raw) {
+        units += ch.charCodeAt(0) > 0x2e80 ? 1 : 0.55;
+      }
+      const bubbleW = Math.min(240, Math.max(72, Math.round(units * 15 + 26)));
+
       return (
-        <text style={{ color: isSelf ? '#fff' : colors.text, fontSize: fontSize.md, lineHeight: '1.5px' }}>
-          {message.text ?? ''}
+        <text
+          style={{
+            width: `${bubbleW}px`,
+            color: isSelf ? '#fff' : colors.text,
+            fontSize: fontSize.md,
+          }}
+        >
+          {raw}
         </text>
       );
+    }
 
     case 'image': {
       const att = message.attachments[0];
@@ -1527,7 +1904,16 @@ function MessageContent(props: { message: Message; isSelf: boolean }) {
       }
 
       return (
+        /**
+         * 点击区必须自己带尺寸
+         * ------------------------------------------------------------
+         * 之前这个 view 没有任何宽高，只包着 image。
+         * Lynx 不会像 CSS 那样让父级被 image 撑开并继承点击区域，
+         * 结果点击落空 —— 用户点了图片没有任何反应。
+         * 显式把宽高写到容器上，点击区域与视觉完全一致。
+         */
         <view
+          style={{ width: `${w}px`, height: `${h}px` }}
           bindtap={() => {
             push({
               name: 'media-viewer',
@@ -1543,6 +1929,8 @@ function MessageContent(props: { message: Message; isSelf: boolean }) {
               borderRadius: radius.md,
             }}
             mode="aspectFill"
+            /* 图片解码完成后再滚一次底：此时高度才真正确定 */
+            bindload={onMediaLoad}
           />
         </view>
       );

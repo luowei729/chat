@@ -695,6 +695,21 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * 广播 WebSocket 事件给前端
+     * 与 sendUploadProgress 同理：全局事件可无限广播，
+     * 是一次性 Callback 之外唯一可靠的长连接事件通道。
+     */
+    fun sendSocketEvent(map: com.lynx.react.bridge.JavaOnlyMap) {
+        try {
+            val args = com.lynx.react.bridge.JavaOnlyArray()
+            args.pushMap(map)
+            lynxView?.sendGlobalEvent("chatSocket", args)
+        } catch (_: Throwable) {
+            // 页面已销毁
+        }
+    }
+
     override fun onPause() {
         super.onPause()
         try {

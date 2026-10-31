@@ -21,8 +21,8 @@ android {
         applicationId = "pub.lkz.chat"
         minSdk = 24
         targetSdk = 34
-        versionCode = 230
-        versionName = "2.3.0"
+        versionCode = 240
+        versionName = "2.4.0"
 
         // 只保留中文与英文资源，减小包体积
         resourceConfigurations += listOf("zh", "en")

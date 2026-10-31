@@ -18,6 +18,7 @@ import type { WsClientMessage, WsServerMessage } from '@chat/shared';
 import { WS_HEARTBEAT_INTERVAL_MS } from '@chat/shared';
 import { PLATFORM, WS_URL } from '../config.js';
 import { getAccessToken, getDeviceId } from './client.js';
+import { openSocket } from '../platform/socket.js';
 
 /* ------------------------------------------------------------------ */
 /* 事件订阅                                                             */
@@ -85,7 +86,7 @@ function emitState(state: ConnectionState): void {
 /* 连接管理                                                             */
 /* ------------------------------------------------------------------ */
 
-let socket: WebSocket | null = null;
+let socket: import('../platform/socket.js').SocketLike | null = null;
 let state: ConnectionState = 'idle';
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -111,7 +112,13 @@ function setState(next: ConnectionState): void {
 
 /** 发送原始消息（未连接时入队） */
 function rawSend(msg: WsClientMessage): boolean {
-  if (socket && socket.readyState === 1 /* OPEN */ && state === 'ready') {
+  /**
+   * 判断是否可发
+   * 不再检查 readyState：原生通道没有这个字段，
+   * 这里用自身维护的 state === 'ready' 作为唯一依据
+   * （它只在收到 ready 事件后置位，语义更准确）。
+   */
+  if (socket && state === 'ready') {
     try {
       socket.send(JSON.stringify(msg));
       return true;
@@ -159,7 +166,17 @@ function backoffMs(): number {
   return Math.round(jitter);
 }
 
-/** 建立连接 */
+/**
+ * 建立连接
+ * ------------------------------------------------------------
+ * 【为什么不再直接用 globalThis.WebSocket】
+ * Lynx 引擎没有可用的 WebSocket 实现：new WebSocket() 不报错，
+ * 但 onopen 永远不触发，也没有任何错误日志。结果是消息不推送、
+ * 通话收不到，且完全无法排查。
+ * 现在统一走 platform/socket.ts：
+ *   原生（Android/iOS/鸿蒙）→ ChatSocket 模块（OkHttp WebSocket）
+ *   Web / 桌面端          → 浏览器原生 WebSocket
+ */
 export function connect(): void {
   if (state === 'connecting' || state === 'authenticating' || state === 'ready') return;
 
@@ -172,74 +189,68 @@ export function connect(): void {
   manualClose = false;
   setState('connecting');
 
-  try {
-    socket = new WebSocket(WS_URL);
-  } catch {
-    setState('closed');
-    scheduleReconnect();
-    return;
-  }
+  socket = openSocket(WS_URL, {}, {
+    onOpen: () => {
+      // 连接建立后先鉴权
+      setState('authenticating');
+      socket?.send(
+        JSON.stringify({
+          type: 'auth',
+          token: getAccessToken() ?? '',
+          platform: PLATFORM,
+          deviceId: getDeviceId(),
+        } satisfies WsClientMessage),
+      );
+    },
 
-  socket.onopen = () => {
-    // 连接建立后先鉴权
-    setState('authenticating');
-    socket?.send(
-      JSON.stringify({
-        type: 'auth',
-        token: getAccessToken() ?? '',
-        platform: PLATFORM,
-        deviceId: getDeviceId(),
-      } satisfies WsClientMessage),
-    );
-  };
-
-  socket.onmessage = (event: { data: unknown }) => {
-    let msg: WsServerMessage;
-    try {
-      msg = JSON.parse(String(event.data)) as WsServerMessage;
-    } catch {
-      return;
-    }
-
-    // 鉴权成功：切到 ready，启动心跳，补发队列与订阅
-    if (msg.type === 'ready') {
-      setState('ready');
-      reconnectAttempts = 0;
-      startHeartbeat();
-
-      // 重新订阅所有会话
-      if (subscriptions.size > 0) {
-        rawSend({ type: 'subscribe', conversationIds: [...subscriptions] });
+    onMessage: (data: string) => {
+      let msg: WsServerMessage;
+      try {
+        msg = JSON.parse(data) as WsServerMessage;
+      } catch {
+        return;
       }
 
-      // 补发断线期间的消息
-      while (outbox.length > 0) {
-        const pending = outbox.shift();
-        if (pending) rawSend(pending);
+      // 鉴权成功：切到 ready，启动心跳，补发队列与订阅
+      if (msg.type === 'ready') {
+        setState('ready');
+        reconnectAttempts = 0;
+        startHeartbeat();
+
+        // 重新订阅所有会话
+        if (subscriptions.size > 0) {
+          rawSend({ type: 'subscribe', conversationIds: [...subscriptions] });
+        }
+
+        // 补发断线期间的消息
+        while (outbox.length > 0) {
+          const pending = outbox.shift();
+          if (pending) rawSend(pending);
+        }
       }
-    }
 
-    emit(msg);
-  };
+      emit(msg);
+    },
 
-  socket.onerror = () => {
-    // onerror 后一定会触发 onclose，重连逻辑统一在 onclose 处理
-  };
+    onError: () => {
+      // 具体错误通过 onClose 统一处理重连
+    },
 
-  socket.onclose = (event: { code: number }) => {
-    stopHeartbeat();
-    setState('closed');
-    socket = null;
+    onClose: (code: number) => {
+      stopHeartbeat();
+      setState('closed');
+      socket = null;
 
-    if (manualClose) return;
+      if (manualClose) return;
 
-    // 鉴权失败（4001/4002）不重连，交给上层跳登录页
-    if (event.code === 4001 || event.code === 4002) {
-      return;
-    }
+      // 鉴权失败（4001/4002）不重连，交给上层跳登录页
+      if (code === 4001 || code === 4002) {
+        return;
+      }
 
-    scheduleReconnect();
-  };
+      scheduleReconnect();
+    },
+  });
 }
 
 /** 安排重连 */

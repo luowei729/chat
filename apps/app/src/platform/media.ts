@@ -177,8 +177,27 @@ function callNative<T>(
 
   return new Promise<T>((resolve, reject) => {
     let settled = false;
-    const cb = (raw: unknown) => {
+    const cb = (rawRaw: unknown) => {
       if (settled) return;
+
+      /**
+       * 原生可能回「对象」也可能回「JSON 字符串」
+       * ------------------------------------------------------------
+       * 文件类结果（选图/拍照/录音）为了规避 JavaOnlyMap 嵌套
+       * 序列化丢失，统一回 JSON 字符串；其余方法回 JavaOnlyMap。
+       * 这里必须先归一化，否则 r0['ok'] 读不到，
+       * 会把成功的结果误判成失败（表现：「操作失败」但实际已成功）。
+       */
+      let raw: unknown = rawRaw;
+      if (typeof rawRaw === 'string') {
+        try {
+          raw = JSON.parse(rawRaw);
+        } catch {
+          settled = true;
+          reject(new PlatformMediaError('failed', '原生返回格式异常'));
+          return;
+        }
+      }
 
       const r0 = (raw ?? {}) as Record<string, unknown>;
 
@@ -273,16 +292,62 @@ function newUploadId(): string {
 }
 
 /* ------------------------------------------------------------------ */
+/* 原生 JSON 结果解析                                                    */
+/* ------------------------------------------------------------------ */
+/**
+ * 为什么原生回字符串而不是对象
+ * ------------------------------------------------------------
+ * Lynx 的 JNI 桥对嵌套的 JavaOnlyMap / ArrayList 序列化不可靠：
+ * 实测 `{ok:true, files:[{...}]}` 传到 JS 后 files 变成空数组，
+ * 且没有任何异常或日志。表现就是「选完相册没反应」。
+ * 字符串是唯一必然原样透传的类型，两边各自 JSON 编解码。
+ */
+function parseFileJson(raw: unknown): PickedFile | null {
+  if (typeof raw !== 'string' || raw.length === 0) return null;
+  try {
+    const o = JSON.parse(raw) as Record<string, unknown>;
+    return {
+      uri: String(o['uri'] ?? ''),
+      name: String(o['name'] ?? 'file'),
+      mime: String(o['mime'] ?? 'application/octet-stream'),
+      size: Number(o['size'] ?? 0),
+      width: o['width'] !== undefined ? Number(o['width']) : undefined,
+      height: o['height'] !== undefined ? Number(o['height']) : undefined,
+      durationMs: o['durationMs'] !== undefined ? Number(o['durationMs']) : undefined,
+      // 录音专用
+      ...(Array.isArray(o['waveform']) ? { waveform: o['waveform'] as number[] } : {}),
+    } as PickedFile;
+  } catch {
+    return null;
+  }
+}
+
+function parseFilesJson(raw: unknown): PickedFile[] {
+  if (typeof raw !== 'string' || raw.length === 0) return [];
+  try {
+    const arr = JSON.parse(raw) as unknown;
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .map((x) => parseFileJson(typeof x === 'string' ? x : JSON.stringify(x)))
+      .filter((x): x is PickedFile => !!x && !!x.uri);
+  } catch {
+    return [];
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /* 选图 / 拍照 / 录像 / 选文件                                          */
 /* ------------------------------------------------------------------ */
 
 /** 相册选图（可多选） */
 export async function pickImages(multiple = true): Promise<PickedFile[]> {
   if (native()?.pickImage) {
-    const r = await callNative<{ files?: PickedFile[] }>('pickImage', [
+    // 原生回的是 {ok:true, filesJson:'[...]'}，必须自己 parse：
+    // 嵌套的 JavaOnlyMap 列表跨桥会变成空数组（见 MediaBridge 注释）
+    const r = await callNative<{ filesJson?: string }>('pickImage', [
       JSON.stringify({ multiple }),
     ]);
-    return r.files ?? [];
+    return parseFilesJson(r.filesJson);
   }
   return webPickFiles('image/*', multiple);
 }
@@ -300,11 +365,12 @@ export async function pickImages(multiple = true): Promise<PickedFile[]> {
  */
 export async function openCamera(flash = false): Promise<PickedFile> {
   if (native()?.openCamera) {
-    const r = await callNative<{ file?: PickedFile }>('openCamera', [
+    const r = await callNative<{ fileJson?: string }>('openCamera', [
       JSON.stringify({ flash }),
     ]);
-    if (!r.file) throw new PlatformMediaError('failed', '没有拿到拍摄结果');
-    return r.file;
+    const file = parseFileJson(r.fileJson);
+    if (!file) throw new PlatformMediaError('failed', '没有拿到拍摄结果');
+    return file;
   }
   // Web/桌面端：浏览器不支持同一按钮双模态，
   // 退化为「先问拍照片还是录像」由调用方决定，这里默认拍照。
@@ -316,10 +382,10 @@ export async function openCamera(flash = false): Promise<PickedFile> {
 /** 系统文件选择器（任意文件） */
 export async function pickFile(): Promise<PickedFile[]> {
   if (native()?.pickFile) {
-    const r = await callNative<{ files?: PickedFile[] }>('pickFile', [
+    const r = await callNative<{ filesJson?: string }>('pickFile', [
       JSON.stringify({ mimeFilter: '*/*' }),
     ]);
-    return r.files ?? [];
+    return parseFilesJson(r.filesJson);
   }
   return webPickFiles('*/*', true);
 }
@@ -345,9 +411,10 @@ export async function startVoiceRecord(): Promise<void> {
 /** 停止录音并拿到结果 */
 export async function stopVoiceRecord(): Promise<RecordedAudio> {
   if (native()?.stopRecord) {
-    const r = await callNative<{ file?: RecordedAudio }>('stopRecord', []);
-    if (!r.file) throw new PlatformMediaError('failed', '录音失败');
-    return r.file;
+    const r = await callNative<{ fileJson?: string }>('stopRecord', []);
+    const file = parseFileJson(r.fileJson) as RecordedAudio | null;
+    if (!file) throw new PlatformMediaError('failed', '录音失败');
+    return file;
   }
   return webStopRecord();
 }

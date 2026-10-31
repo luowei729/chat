@@ -191,7 +191,7 @@ export function ResetPasswordPage() {
                 color: colors.textFaint,
                 fontSize: fontSize.xs,
                 marginTop: spacing.md,
-                lineHeight: '1.6px',
+                
               }}
             >
               重置成功后，所有设备上的登录状态都会失效，需要重新登录。

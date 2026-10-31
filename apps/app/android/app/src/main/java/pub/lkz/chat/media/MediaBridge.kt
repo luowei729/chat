@@ -59,6 +59,7 @@ object MediaBridge {
 
         activity.runOnUiThread {
             try {
+                android.util.Log.i("MediaBridge", "launch code=$code kind=$kind")
                 activity.startActivityForResult(intent, code)
             } catch (e: Throwable) {
                 clear()
@@ -69,7 +70,15 @@ object MediaBridge {
 
     /** MainActivity.onActivityResult 转发入口 */
     fun handleActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        if (requestCode != pendingCode) return
+        android.util.Log.i(
+            "MediaBridge",
+            "onActivityResult req=$requestCode result=$resultCode pending=$pendingCode " +
+                "hasData=${data != null} clip=${data?.clipData?.itemCount ?: -1} uri=${data?.data}",
+        )
+        if (requestCode != pendingCode) {
+            android.util.Log.w("MediaBridge", "requestCode 不匹配，丢弃")
+            return
+        }
         val cb = pendingCallback ?: return
         val kind = pendingKind
         clear()
@@ -105,28 +114,42 @@ object MediaBridge {
         return if (single != null) listOf(single) else emptyList()
     }
 
+    /**
+     * 把选中的 Uri 列表回给 JS
+     * ------------------------------------------------------------
+     * 【必须用 JSON 字符串，不能用 JavaOnlyMap 嵌套列表】
+     * 实测：JavaOnlyMap.from(mapOf("files" to ArrayList<JavaOnlyMap>))
+     * 跨 JNI 到 JS 后，files 变成空数组（没有任何报错）。
+     * 结果就是「选了图片 → 回调到了 → 但 JS 收到 0 个文件 → 静默不发送」，
+     * 用户看到的是「选完相册没反应」。
+     *
+     * 单层的 JavaOnlyMap（如 ChatStore.dump）也有过同样问题，
+     * 统一改成字符串最稳：桥接层必然原样透传。
+     */
     private fun emitUris(cb: Callback, uris: List<Uri>) {
+        android.util.Log.i("MediaBridge", "emitUris count=${uris.size} $uris")
         if (uris.isEmpty()) {
+            android.util.Log.w("MediaBridge", "uris 为空 → 按取消处理")
             cancel(cb)
             return
         }
         val app = AppContext.get() ?: run {
+            android.util.Log.e("MediaBridge", "AppContext 丢失")
             fail(cb, "上下文丢失")
             return
         }
-        val files = ArrayList<Any>(uris.size)
+
+        val arr = org.json.JSONArray()
         for (u in uris) {
-            val meta = describe(app.contentResolver, u)
-            files.add(meta)
+            arr.put(describe(app.contentResolver, u))
         }
-        cb.invoke(
-            JavaOnlyMap.from(
-                mapOf(
-                    "ok" to true,
-                    "files" to files,
-                ),
-            ),
-        )
+
+        val payload = org.json.JSONObject().apply {
+            put("ok", true)
+            put("filesJson", arr.toString())
+        }
+        android.util.Log.i("MediaBridge", "回传 filesJson 长度=${arr.toString().length}")
+        cb.invoke(payload.toString())
     }
 
     /**
@@ -144,27 +167,31 @@ object MediaBridge {
             return
         }
         val isVideo = data.getBooleanExtra("isVideo", false)
-        val map = HashMap<String, Any>()
-        map["ok"] = true
-        map["file"] = JavaOnlyMap.from(
-            mapOf(
-                "uri" to file.absolutePath,
-                "name" to file.name,
-                "mime" to (data.getStringExtra("mime")
-                    ?: if (isVideo) "video/mp4" else "image/jpeg"),
-                "size" to file.length(),
-                "width" to data.getIntExtra("width", 0),
-                "height" to data.getIntExtra("height", 0),
-                "durationMs" to data.getLongExtra("durationMs", 0L),
-                "waveform" to emptyList<Int>(),
-            ),
-        )
-        cb.invoke(JavaOnlyMap.from(map))
+
+        // 同样用 JSON 字符串（见 emitUris 的说明）
+        val fileJson = org.json.JSONObject().apply {
+            put("uri", file.absolutePath)
+            put("name", file.name)
+            put(
+                "mime",
+                data.getStringExtra("mime") ?: if (isVideo) "video/mp4" else "image/jpeg",
+            )
+            put("size", file.length())
+            put("width", data.getIntExtra("width", 0))
+            put("height", data.getIntExtra("height", 0))
+            put("durationMs", data.getLongExtra("durationMs", 0L))
+        }
+        val payload = org.json.JSONObject().apply {
+            put("ok", true)
+            put("fileJson", fileJson.toString())
+        }
+        cb.invoke(payload.toString())
     }
 
     /* ---------------- Uri → 文件描述 ---------------- */
 
-    fun describe(resolver: ContentResolver, uri: Uri): JavaOnlyMap {
+    /** 读取 Uri 的文件信息（返回 JSONObject，最终由调用方转字符串） */
+    fun describe(resolver: ContentResolver, uri: Uri): org.json.JSONObject {
         var name = uri.lastPathSegment ?: "file"
         var size = 0L
         try {
@@ -180,13 +207,23 @@ object MediaBridge {
             // 部分 provider 不支持 query，用兜底值
         }
 
+        // PhotoPicker 有时拿不到 size，尝试用 AssetFileDescriptor 补
+        if (size <= 0) {
+            try {
+                resolver.openAssetFileDescriptor(uri, "r")?.use { afd ->
+                    if (afd.length > 0) size = afd.length
+                }
+            } catch (_: Throwable) {
+            }
+        }
+
         val mime = resolver.getType(uri) ?: guessMime(name)
-        val map = HashMap<String, Any>()
-        map["uri"] = uri.toString()
-        map["name"] = name
-        map["mime"] = mime
-        map["size"] = size
-        return JavaOnlyMap.from(map)
+        return org.json.JSONObject().apply {
+            put("uri", uri.toString())
+            put("name", name)
+            put("mime", mime)
+            put("size", size)
+        }
     }
 
     fun guessMime(name: String): String {

@@ -193,6 +193,15 @@ async function handleAuth(client: WsClient, msg: { token: string; platform: stri
           .filter((p) => p.state === 'joined')
           .map((p) => p.userId),
       });
+      /**
+       * 振铃中且自己还没接 → 把来电再推一次。
+       * 不补的话，重连的被叫永远看不到来电页（只能收到 state），
+       * 通话就静默 missed 了。
+       */
+      const incoming = callService.incomingFor(payload.sub);
+      if (incoming) {
+        send(client, { type: 'call.incoming', ...incoming });
+      }
     }
 
     log.info({ userId: payload.sub, deviceId: client.deviceId, platform: client.platform }, 'WS 鉴权成功');

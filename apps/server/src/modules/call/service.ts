@@ -75,6 +75,10 @@ interface CallState {
   createdAt: number;
   /** 振铃超时定时器 */
   ringTimer: NodeJS.Timeout | null;
+  /** 来电展示信息：重连补发 incoming 时复用，避免重查库 */
+  caller: { id: string; nickname: string; avatarUrl: string | null };
+  conversationTitle: string;
+  expiresAt: number;
 }
 
 /** 进行中的通话：callId → 状态 */
@@ -215,6 +219,18 @@ export async function invite(params: {
     throw new AppError(ErrorCode.CALL_STATE_INVALID, '对方正在通话中');
   }
 
+  const callerRows = await db
+    .select({ id: users.id, nickname: users.nickname, avatarUrl: users.avatarUrl })
+    .from(users)
+    .where(eq(users.id, initiatorId))
+    .limit(1);
+  const callerInfo = callerRows[0] ?? { id: initiatorId, nickname: '未知用户', avatarUrl: null };
+  const convTitleRows = await db
+    .select({ title: users.nickname })
+    .from(users)
+    .where(eq(users.id, initiatorId))
+    .limit(1);
+
   const call: CallState = {
     id: callId,
     conversationId,
@@ -224,6 +240,9 @@ export async function invite(params: {
     participants,
     createdAt: now,
     ringTimer: null,
+    caller: callerInfo,
+    conversationTitle: convTitleRows[0]?.title ?? '通话',
+    expiresAt: now + config.call.ringTimeoutMs,
   };
 
   activeCalls.set(callId, call);
@@ -231,19 +250,12 @@ export async function invite(params: {
   for (const uid of reachable) userCallIndex.set(uid, callId);
 
   // ---------- 振铃超时：45 秒无人接听自动结束 ----------
-  const expiresAt = now + config.call.ringTimeoutMs;
   call.ringTimer = setTimeout(() => {
     void handleRingTimeout(callId);
   }, config.call.ringTimeoutMs);
   call.ringTimer.unref?.();
 
   // ---------- 落库（仅记录，不用于实时状态） ----------
-  const convRows = await db
-    .select({ title: users.nickname })
-    .from(users)
-    .where(eq(users.id, initiatorId))
-    .limit(1);
-
   await db.insert(callSessions).values({
     id: callId,
     conversationId,
@@ -267,21 +279,14 @@ export async function invite(params: {
     })),
   );
 
-  const callerRows = await db
-    .select({ id: users.id, nickname: users.nickname, avatarUrl: users.avatarUrl })
-    .from(users)
-    .where(eq(users.id, initiatorId))
-    .limit(1);
-  const caller = callerRows[0] ?? { id: initiatorId, nickname: '未知用户', avatarUrl: null };
-
   log.info({ callId, conversationId, initiatorId, targets: reachable.length, busy: busy.length }, '发起通话');
 
   return {
     call,
     inviteeIds: reachable,
-    caller,
-    conversationTitle: convRows[0]?.title ?? '通话',
-    expiresAt,
+    caller: call.caller,
+    conversationTitle: call.conversationTitle,
+    expiresAt: call.expiresAt,
   };
 }
 
@@ -467,6 +472,40 @@ export function currentCallOf(userId: string): CallState | null {
   const callId = userCallIndex.get(userId);
   if (!callId) return null;
   return activeCalls.get(callId) ?? null;
+}
+
+/**
+ * 重连补发来电
+ * ------------------------------------------------------------
+ * 场景：被叫 App 在振铃期间被系统杀掉（低内存常见），
+ * 重连时只收到 call.state（active 参与者快照），
+ * 但 call.incoming 丢了 → 来电界面永远弹不出来。
+ * 这里在鉴权成功后判断：如果用户在一通 ringing 的通话里
+ * 且自己还没接听，就把 incoming 原样再推一次，
+ * 客户端收到后正常弹出来电页，不超过振铃期就还能接。
+ */
+export function incomingFor(userId: string): {
+  callId: string;
+  conversationId: string;
+  mode: CallMode;
+  caller: { id: string; nickname: string; avatarUrl: string | null };
+  conversationTitle: string;
+  expiresAt: number;
+} | null {
+  const callId = userCallIndex.get(userId);
+  if (!callId) return null;
+  const call = activeCalls.get(callId);
+  if (!call || call.status !== 'ringing') return null;
+  if (call.participants.get(userId)?.state !== 'invited') return null;
+  if (call.expiresAt <= Date.now()) return null;
+  return {
+    callId: call.id,
+    conversationId: call.conversationId,
+    mode: call.mode,
+    caller: call.caller,
+    conversationTitle: call.conversationTitle,
+    expiresAt: call.expiresAt,
+  };
 }
 
 /** 取通话状态（信令转发前校验用） */

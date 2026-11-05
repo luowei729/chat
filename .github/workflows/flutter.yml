@@ -142,8 +142,10 @@ jobs:
   # ---------------- Windows ----------------
   windows:
     name: Windows
-    runs-on: windows-latest
-    timeout-minutes: 40
+    # 固定到 windows-2022：windows-latest 已迁移，上面残留的 VS2019 元数据会让
+    # Flutter 误判生成器为 "Visual Studio 16 2019"（只有 VS2022 时直接失败）。
+    runs-on: windows-2022
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: apps/client
@@ -156,6 +158,20 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
+
+      # 诊断：Flutter 靠 vswhere 判断 VS 版本并据此选 CMake 生成器，
+      # 判断错就直接 "could not find any instance of Visual Studio"。
+      # 把真实信息打进日志，出问题不用猜。
+      - name: 诊断 Visual Studio
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (Test-Path $vswhere) {
+            & $vswhere -all -products * -format json
+          } else {
+            Write-Host "vswhere not found"
+          }
+          flutter doctor -v
 
       - run: flutter pub get
       - run: flutter build windows --release

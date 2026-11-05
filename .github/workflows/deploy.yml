@@ -82,11 +82,21 @@ jobs:
           ssh-keyscan -p "${{ secrets.SSH_PORT || 22 }}" -H "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
 
       # ---------- 上传产物 ----------
+      #
+      # 【为什么不能用 --delete】
+      # 目标目录 /opt/chat-server/ 里还有运行时文件：
+      #   .env（数据库密码/密钥）、node_modules、seedcode.mjs 等脚本。
+      # 它们不在 deploy/ 里，一旦 --delete 生效就会被整批删掉，
+      # 直接把生产环境打挂（而且 .env 删了服务起不来）。
+      # 所以只用覆盖式同步，并显式排除运行时目录。
       - name: 上传构建产物
         run: |
           set -euo pipefail
-          rsync -avz --delete \
+          rsync -avz \
             -e "ssh -p ${{ secrets.SSH_PORT || 22 }} -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no" \
+            --exclude '.env' \
+            --exclude 'node_modules' \
+            --exclude '*.mjs' \
             deploy/ \
             "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/opt/chat-server/"
 

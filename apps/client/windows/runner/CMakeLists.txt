@@ -13,6 +13,8 @@ add_executable(${BINARY_NAME} WIN32
   "win32_window.cpp"
   "window_state.cpp"
   "toast_window.cpp"
+  "tray_icon.cpp"
+  "sound.cpp"
   "${FLUTTER_MANAGED_DIR}/generated_plugin_registrant.cc"
   "Runner.rc"
   "runner.exe.manifest"
@@ -43,8 +45,11 @@ endif()
 # dependencies here.
 target_link_libraries(${BINARY_NAME} PRIVATE flutter flutter_wrapper_app)
 target_link_libraries(${BINARY_NAME} PRIVATE "dwmapi.lib")
-# shell32：SHGetKnownFolderPath（窗口尺寸持久化用 %LOCALAPPDATA%）
+# shell32：SHGetKnownFolderPath（窗口尺寸持久化）+ Shell_NotifyIcon（托盘）
+#         + SetCurrentProcessExplicitAppUserModelID（任务栏身份）
 target_link_libraries(${BINARY_NAME} PRIVATE "shell32.lib")
+# winmm：PlaySound（新消息提示音 / 来电循环响铃）
+target_link_libraries(${BINARY_NAME} PRIVATE "winmm.lib")
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 
 # Run the Flutter tool portions of the build. This must not be removed.

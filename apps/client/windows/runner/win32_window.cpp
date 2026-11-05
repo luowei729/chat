@@ -95,8 +95,24 @@ const wchar_t* WindowClassRegistrar::GetWindowClass() {
     window_class.cbClsExtra = 0;
     window_class.cbWndExtra = 0;
     window_class.hInstance = GetModuleHandle(nullptr);
-    window_class.hIcon =
-        LoadIcon(window_class.hInstance, MAKEINTRESOURCE(IDI_APP_ICON));
+    /**
+     * 图标必须用 LoadImage 指定尺寸，不能用 LoadIcon
+     * ------------------------------------------------------------
+     * LoadIcon 只会取 32x32（SM_CXICON）那一个尺寸。
+     * 高 DPI / 高分屏下任务栏需要 40x40、48x48 甚至更大，
+     * 拿不到合适尺寸时 Windows 会退化成一个空白占位块——
+     * 用户看到的就是「任务栏上没有应用图标」。
+     *
+     * 用 LoadImage + LR_DEFAULTSIZE 让系统自己挑最合适的帧，
+     * 我们的 ico 里包含 16/24/32/48/64/128/256 共 7 个尺寸。
+     */
+    window_class.hIcon = static_cast<HICON>(LoadImageW(
+        window_class.hInstance, MAKEINTRESOURCEW(IDI_APP_ICON), IMAGE_ICON,
+        0, 0, LR_DEFAULTSIZE | LR_DEFAULTCOLOR));
+    if (!window_class.hIcon) {
+      // 极端情况下回退，至少不至于没图标
+      window_class.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
+    }
     window_class.hbrBackground = 0;
     window_class.lpszMenuName = nullptr;
     window_class.lpfnWndProc = Win32Window::WndProc;
@@ -142,6 +158,17 @@ bool Win32Window::Create(const std::wstring& title,
 
   if (!window) {
     return false;
+  }
+
+  // 创建后立即设置窗口图标（大图标 = Alt+Tab，小图标 = 标题栏/任务栏）
+  // 窗口类里的 hIcon 只提供默认值，部分主题下任务栏取不到，这里再显式给一次。
+  const HICON big_icon = static_cast<HICON>(LoadImageW(
+      GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_APP_ICON), IMAGE_ICON, 0,
+      0, LR_DEFAULTSIZE | LR_DEFAULTCOLOR));
+  if (big_icon) {
+    SendMessageW(window, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(big_icon));
+    SendMessageW(window, WM_SETICON, ICON_SMALL,
+                 reinterpret_cast<LPARAM>(big_icon));
   }
 
   UpdateTheme(window);

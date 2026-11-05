@@ -181,8 +181,8 @@ export const registerPushSchema = z.object({
   deviceId: z.string().min(1).max(128),
   /** 厂商推送 token / APNs token / Harmony push token */
   token: z.string().min(1).max(512),
-  /** 厂商标识：hms / xiaomi / oppo / vivo / apns / harmony */
-  provider: z.enum(['hms', 'xiaomi', 'oppo', 'vivo', 'apns', 'harmony']),
+  /** 厂商标识：mob / hms / xiaomi / oppo / vivo / apns / harmony */
+  provider: z.enum(['mob', 'hms', 'xiaomi', 'oppo', 'vivo', 'apns', 'harmony']),
   appVersion: z.string().max(32).optional(),
 });
 

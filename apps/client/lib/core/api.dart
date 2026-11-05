@@ -262,6 +262,32 @@ class ApiClient {
       post('/auth/reset-password', {'email': email, 'code': code, 'newPassword': newPassword});
 
   /* ------------------------------------------------------------------ */
+  /* 推送                                                                */
+  /* ------------------------------------------------------------------ */
+
+  /// 上报推送令牌（同设备重复上报会覆盖，天然幂等）
+  ///
+  /// provider 目前用 'mob'：MobPush 会给一个统一令牌，
+  /// 由 Mob 服务端按控制台配置路由到华为/小米/OPPO/vivo 等厂商通道，
+  /// 客户端不需要分别接各家 SDK。
+  Future<void> registerPushToken({
+    required String provider,
+    required String platform,
+    required String deviceId,
+    required String token,
+  }) =>
+      post('/push/register', {
+        'provider': provider,
+        'platform': platform,
+        'deviceId': deviceId,
+        'token': token,
+      });
+
+  /// 注销本设备的推送令牌（退出登录时调用）
+  Future<void> unregisterPushToken({required String deviceId}) =>
+      delete('/push/register', {'deviceId': deviceId});
+
+  /* ------------------------------------------------------------------ */
   /* 用户与联系人                                                        */
   /* ------------------------------------------------------------------ */
 

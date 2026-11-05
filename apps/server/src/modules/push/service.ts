@@ -22,6 +22,7 @@
  */
 
 import { eq } from 'drizzle-orm';
+import { createHash } from 'node:crypto';
 import { db } from '../../db/index.js';
 import { pushTokens } from '../../db/schema.js';
 import { config } from '../../config.js';
@@ -431,6 +432,79 @@ async function sendHarmony(deviceToken: string, payload: PushPayload): Promise<b
 }
 
 /* ------------------------------------------------------------------ */
+/* MobPush（聚合通道）                                                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * MobPush 服务端 API
+ * ------------------------------------------------------------
+ * 接口：POST https://api.push.mob.com/v3/push/createPush
+ * 鉴权：请求头 key = appKey，sign = md5(appKey + appSecret)
+ *       （无 Bearer、无 OAuth，AppSecret 绝不能下发到客户端去做这个签名）
+ *
+ * 目标：target = 4 表示按 registrationId 推送，正好对应我们存的 deviceToken。
+ * 平台：plats = [1] 安卓、[2] iOS、[1,2] 全平台。
+ *
+ * 为什么用 Mob 而不是继续写各厂商通道：
+ *   Mob 控制台里把华为/小米/OPPO/vivo/魅族的应用配一遍，
+ *   之后服务端只需要调这一个接口，由 Mob 负责路由和重试。
+ */
+async function sendMob(deviceToken: string, payload: PushPayload): Promise<boolean> {
+  const { appKey, appSecret } = config.push.mob;
+  if (!appKey || !appSecret) return false;
+
+  const sign = createHash('md5').update(appKey + appSecret).digest('hex');
+
+  // 业务字段放在 extras 里，客户端点击通知后据此跳转
+  const extras: Array<{ key: string; value: string }> = [];
+  if (payload.conversationId) {
+    extras.push({ key: 'conversationId', value: payload.conversationId });
+  }
+  if (payload.callId) {
+    extras.push({ key: 'callId', value: payload.callId });
+  }
+
+  try {
+    const res = await fetch('https://api.push.mob.com/v3/push/createPush', {
+      method: 'POST',
+      headers: {
+        key: appKey,
+        sign,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        source: 'webapi',
+        appkey: appKey,
+        pushTarget: { target: 4, rids: [deviceToken] },
+        pushNotify: {
+          plats: [1],
+          content: payload.body,
+          title: payload.title,
+          // 1 = 通知栏消息；2 = 透传消息（静默）
+          type: 1,
+          ...(extras.length > 0 ? { extrasMapList: extras } : {}),
+        },
+      }),
+    });
+
+    if (!res.ok) {
+      log.warn({ status: res.status }, 'Mob 推送 HTTP 失败');
+      return false;
+    }
+
+    const json = (await res.json()) as { status?: number; error?: string };
+    if (json.status !== 200) {
+      log.warn({ error: json.error }, 'Mob 推送被拒绝');
+      return false;
+    }
+    return true;
+  } catch (e) {
+    log.warn({ err: e }, 'Mob 推送失败');
+    return false;
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /* 统一入口                                                             */
 /* ------------------------------------------------------------------ */
 
@@ -441,6 +515,8 @@ async function sendByProvider(
   payload: PushPayload,
 ): Promise<boolean> {
   switch (provider) {
+    case 'mob':
+      return sendMob(deviceToken, payload);
     case 'apns':
       return sendApns(deviceToken, payload);
     case 'hms':

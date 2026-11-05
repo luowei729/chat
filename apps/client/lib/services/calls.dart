@@ -6,6 +6,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart' as rtc;
 
 import '../core/api.dart';
+import 'call_overlay.dart';
+import 'desktop_bridge.dart';
 import 'session.dart';
 import 'ws.dart';
 
@@ -57,6 +59,15 @@ class CallController extends ChangeNotifier {
 
   void attach() {
     _wsSub ??= WsService.instance.events.listen(_onWsEvent);
+
+    // 悬浮窗上的按钮回调（Android）
+    CallOverlayBridge.instance.onHangup = () {
+      hangup();
+    };
+    CallOverlayBridge.instance.onOpen = () {
+      // 拉回前台由原生完成，这边只负责把通话页重新展示（如果被栈顶盖住）
+      onIncoming?.call();
+    };
   }
 
   /* ------------------------------------------------------------------ */
@@ -112,6 +123,10 @@ class CallController extends ChangeNotifier {
 
   Future<void> accept() async {
     if (phase != CallPhase.incoming) return;
+
+    // 接听瞬间就停铃：用户已经拿起电话，铃声不该继续
+    unawaited(DesktopBridge.instance.stopIncomingCall());
+
     phase = CallPhase.connecting;
     notifyListeners();
 
@@ -202,6 +217,18 @@ class CallController extends ChangeNotifier {
     elapsedSeconds = 0;
     phase = CallPhase.incoming;
     notifyListeners();
+
+    /**
+     * 桌面端来电强提醒
+     * ------------------------------------------------------------
+     * 只有卡片没有声音，用户根本不会发现有人打进来（尤其是最小化到托盘后）。
+     * 这里同时做三件事：卡片 + 循环响铃 + 任务栏闪烁，
+     * 三者都在 stopIncomingCall() 里一次性关掉。
+     */
+    unawaited(DesktopBridge.instance.showIncomingCall(
+      title: callerName,
+      body: '邀请你语音通话',
+    ));
 
     onIncoming?.call();
   }
@@ -477,16 +504,51 @@ class CallController extends ChangeNotifier {
   void _startTick() {
     _tick?.cancel();
     elapsedSeconds = 0;
+
+    // 接通后才显示悬浮窗：响铃阶段显示反而妨碍用户看界面
+    unawaited(_showOverlay());
+
     _tick = Timer.periodic(const Duration(seconds: 1), (_) {
       elapsedSeconds++;
+      // 悬浮窗上的时长同步（每秒一次，原生侧很轻）
+      unawaited(CallOverlayBridge.instance.updateTimer(_formatDuration(elapsedSeconds)));
       notifyListeners();
     });
+  }
+
+  /// 显示通话悬浮窗（无权限时先申请）
+  Future<void> _showOverlay() async {
+    final bridge = CallOverlayBridge.instance;
+    if (!await bridge.isAvailable) return;
+
+    var granted = await bridge.hasPermission();
+    if (!granted) {
+      // 首次需要用户去系统设置页手动开启
+      granted = await bridge.requestPermission();
+    }
+    if (!granted) return;
+
+    await bridge.show(peerName: peerName.isEmpty ? '通话中' : peerName);
+  }
+
+  static String _formatDuration(int seconds) {
+    final m = seconds ~/ 60;
+    final s = seconds % 60;
+    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
 
   Future<void> _finish({required bool sendHangup}) async {
     if (sendHangup && callId != null) {
       WsService.instance.hangupCall(callId!);
     }
+
+    // 铃必须在所有结束路径上停掉（接听/拒接/挂断/超时/对方取消），
+    // 漏掉任何一条都会导致铃声一直响，用户只能强制退出。
+    unawaited(DesktopBridge.instance.stopIncomingCall());
+
+    // 悬浮窗同理：不 hide 会一直挂在桌面上
+    unawaited(CallOverlayBridge.instance.hide());
+
     _tick?.cancel();
     _tick = null;
     _timeout?.cancel();

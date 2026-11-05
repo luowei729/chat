@@ -1,6 +1,11 @@
+// windows.h 必须最先包含：shellapi.h 依赖它定义的类型（HWND/BOOL 等），
+// 顺序反了在部分 Windows SDK 上会直接编译失败。
+#include <windows.h>
+
+#include <shellapi.h>  // SetCurrentProcessExplicitAppUserModelID
+
 #include <flutter/dart_project.h>
 #include <flutter/flutter_view_controller.h>
-#include <windows.h>
 
 #include "flutter_window.h"
 #include "utils.h"
@@ -17,6 +22,21 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   // Initialize COM, so that it is available for use in the library and/or
   // plugins.
   ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+
+  /**
+   * 设置 AppUserModelID（任务栏身份标识）
+   * ------------------------------------------------------------
+   * 不设置的话 Windows 只能靠可执行文件路径来识别应用，会带来三个问题：
+   *   1. 任务栏图标分组异常，可能出现空白图标或重复按钮；
+   *   2. 图标缓存混乱：换了图标后任务栏仍显示旧的；
+   *   3. 「固定到任务栏」后无法正确关联回同一个应用。
+   *
+   * 必须用稳定且唯一的字符串（写成反向域名，不要改），
+   * 一旦改了，用户固定在任务栏的快捷方式会失效。
+   *
+   * 必须在创建任何窗口之前调用。
+   */
+  ::SetCurrentProcessExplicitAppUserModelID(L"pub.lkz.chat.desktop");
 
   flutter::DartProject project(L"data");
 

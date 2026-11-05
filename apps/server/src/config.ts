@@ -193,6 +193,21 @@ export const config = {
       appKey: optional('VIVO_APP_KEY', ''),
       appSecret: optional('VIVO_APP_SECRET', ''),
     },
+    /**
+     * MobPush 聚合通道
+     * ------------------------------------------------------------
+     * 国内 Android 没有 GMS，各家厂商通道（华为/小米/OPPO/vivo）都要单独接，
+     * 且每家凭据、接口、错误码都不同。
+     * MobPush 的做法：客户端只接一个 SDK，服务端只调一个接口，
+     * 由 Mob 按控制台配置自动路由到对应厂商通道。
+     *
+     * 因此鸿蒙 4.x（AOSP 内核，可装 APK）走的就是这条：
+     *   APK → MobPush → Mob 云端 → 华为通道（HMS）→ 设备。
+     */
+    mob: {
+      appKey: optional('MOB_PUSH_APP_KEY', ''),
+      appSecret: optional('MOB_PUSH_APP_SECRET', ''),
+    },
     harmony: {
       appId: optional('HARMONY_PUSH_APP_ID', ''),
       appSecret: optional('HARMONY_PUSH_APP_SECRET', ''),
@@ -232,6 +247,9 @@ export function validateConfig(): string[] {
   }
   if (!config.push.hms.appId) {
     warnings.push('HMS 未配置：华为设备离线推送不可用');
+  }
+  if (!config.push.mob.appKey || !config.push.mob.appSecret) {
+    warnings.push('MOB_PUSH 未配置：Android 离线推送不可用（含鸿蒙 4.x 装 APK 的场景）');
   }
   if (config.jwt.secret.includes('dev-only')) {
     warnings.push('JWT_SECRET 使用开发默认值，请在生产环境更换');

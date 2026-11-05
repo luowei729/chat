@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../../services/call_overlay.dart';
 import '../../services/calls.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
@@ -108,6 +111,32 @@ class _CallPageState extends State<CallPage> {
     );
   }
 
+  /**
+   * 最小化到悬浮窗
+   * ------------------------------------------------------------
+   * Android：先确认/申请悬浮窗权限，再隐藏当前页 ——
+   *          必须真的把 App 退到后台，否则悬浮窗会被本页盖住。
+   * 桌面端：直接缩窗口（桌面本来就能多窗口共存，不需要悬浮窗）。
+   */
+  Future<void> _minimize() async {
+    final bridge = CallOverlayBridge.instance;
+    if (await bridge.isAvailable) {
+      var granted = await bridge.hasPermission();
+      if (!granted) {
+        granted = await bridge.requestPermission();
+      }
+      if (!granted) {
+        if (mounted) showError(context, '需要悬浮窗权限才能后台通话');
+        return;
+      }
+      if (!mounted) return;
+      // 先把悬浮窗挂上，再退出 App，避免中间出现「什么都没有」的空档
+      await bridge.show(peerName: _call.peerName.isEmpty ? '通话中' : _call.peerName);
+      await bridge.bringToFront();
+      if (mounted) Navigator.of(context).maybePop();
+    }
+  }
+
   String _statusText(CallPhase phase) {
     switch (phase) {
       case CallPhase.outgoing:
@@ -177,6 +206,14 @@ class _CallPageState extends State<CallPage> {
           iconColor: _call.speakerOn ? Colors.white : c.text,
           label: '扬声器',
           onTap: () => _call.toggleSpeaker(),
+        ),
+        // 最小化：退到后台并挂悬浮窗，通话持续进行
+        _CircleButton(
+          icon: Icons.picture_in_picture_alt_outlined,
+          color: c.surfaceAlt,
+          iconColor: c.text,
+          label: '最小化',
+          onTap: () => unawaited(_minimize()),
         ),
         _CircleButton(
           icon: Icons.call_end,

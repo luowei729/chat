@@ -175,6 +175,7 @@ class ChatStore extends ChangeNotifier {
         .map((c) => c.id == conversationId ? c.copyWith(unreadCount: 0) : c)
         .toList(growable: false);
     conversations = updated;
+    _syncTrayTip();
     notifyListeners();
   }
 
@@ -631,6 +632,19 @@ class ChatStore extends ChangeNotifier {
     unawaited(_notifyDesktop(conversationId, incoming));
   }
 
+  /// 通知所有订阅者
+  void _notifyAll() => notifyListeners();
+
+  /// 同步托盘悬停提示（Windows）
+  ///
+  /// 托盘图标是窗口隐藏时用户唯一能看到的信息入口，
+  /// 把未读数写上去，不用打开窗口就知道有几条。
+  void _syncTrayTip() {
+    final unread = totalUnread;
+    final tip = unread > 0 ? 'Chat — $unread 条未读' : 'Chat';
+    unawaited(DesktopBridge.instance.updateTrayTip(tip));
+  }
+
   /// 桌面端新消息提示
   ///
   /// 三条规则：
@@ -757,6 +771,7 @@ class ChatStore extends ChangeNotifier {
       // 新会话：拉一次列表把标题/头像补全
       unawaited(loadConversations(silent: true));
     }
+    _syncTrayTip();
     notifyListeners();
   }
 

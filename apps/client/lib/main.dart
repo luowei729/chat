@@ -8,6 +8,7 @@ import 'core/storage.dart';
 import 'services/calls.dart';
 import 'services/chat_store.dart';
 import 'services/local_cache.dart';
+import 'services/push_service.dart';
 import 'services/session.dart';
 import 'ui/app.dart';
 
@@ -67,6 +68,8 @@ Future<void> main() async {
 
   ChatStore.instance.attachWs();
   CallController.instance.attach();
+  // 推送通道：必须先挂上，否则原生层先拿到的令牌/点击事件会丢
+  PushService.instance.attach();
   unawaited(Session.instance.bootstrap());
 
   runApp(const ChatApp());

@@ -17,9 +17,24 @@
     <!-- WebRTC 音频路由（部分 ROM 需要） -->
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
 
+    <!--
+      通话悬浮窗
+      必须声明 SYSTEM_ALERT_WINDOW，否则 requestPermission 跳转设置页后
+      用户找不到「显示在其他应用上层」开关，浮窗永远开不了。
+    -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
+
+    <!-- Android 13+ 通知需要运行时授权，不声明则通知栏不显示 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+
+    <!-- MobPush 长连接与通知 -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
+    <uses-permission android:name="android.permission.VIBRATE"/>
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+
     <application
         android:label="Chat"
-        android:name="${applicationName}"
+        android:name=".ChatApplication"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="false">
         <activity

@@ -8,6 +8,7 @@ import '../core/api.dart';
 import '../core/config.dart';
 import '../core/models.dart';
 import '../core/storage.dart';
+import 'push_service.dart';
 import 'ws.dart';
 
 enum AuthStatus { checking, authenticated, unauthenticated }
@@ -71,6 +72,8 @@ class Session extends ChangeNotifier {
       await AppStorage.instance.saveUser(fresh.id, jsonEncode(fresh.toJson()));
       notifyListeners();
       unawaited(WsService.instance.connect());
+      // 登录态就绪后上报推送令牌（失败不影响使用）
+      unawaited(PushService.instance.sync());
     } on ApiException catch (e) {
       if (e.isAuthError) {
         await _clearAuth();
@@ -126,9 +129,12 @@ class Session extends ChangeNotifier {
     lastError = null;
     notifyListeners();
     unawaited(WsService.instance.connect());
+    unawaited(PushService.instance.sync());
   }
 
   Future<void> logout() async {
+    // 先注销推送令牌，避免下个账号收到上一个用户的消息
+    await PushService.instance.unregister();
     await _api.logout();
     await WsService.instance.disconnect();
     await _clearAuth();

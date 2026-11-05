@@ -54,17 +54,5 @@ jobs:
       - name: 构建 server
         run: pnpm --filter @chat/server build
 
-      # ---------- 客户端 ----------
-      - name: 类型检查 app
-        run: pnpm --filter @chat/app typecheck
-
-      - name: 构建 Lynx 客户端
-        run: pnpm --filter @chat/app build
-
-      # ---------- 产物留存（便于排查构建问题） ----------
-      - name: 上传构建产物
-        uses: actions/upload-artifact@v4
-        with:
-          name: lynx-bundle
-          path: apps/app/dist/
-          retention-days: 7
+      # 客户端（Flutter）的检查在 .github/workflows/flutter.yml，
+      # 需要 Flutter SDK，不能混在纯 Node 的 job 里跑。

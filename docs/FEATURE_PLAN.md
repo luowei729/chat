@@ -133,19 +133,18 @@ PUT    /me/settings          更新设置
 - 删好友后重新加，备注还在（符合直觉）
 - 未来可扩展到群昵称（`scope` 字段区分）
 
-### 3. 前端布局约束（血泪教训）
-本项目 Lynx 集成下：
-- `scroll-view` / `list` **不能做页面主滚动容器**（内容会空白且不报错）
-- 长列表用分页加载 + 纯 `view` 布局
-- 所有长度必须带单位字符串（`'16px'`）
-- 容器必须显式 `display:'flex' + flexDirection:'column'`（view 默认行向）
+### 3. 前端布局约束
+客户端已迁移到 Flutter（2026-11-05），原先 Lynx 的布局限制全部失效：
+- 列表用 `ListView.builder` 即可，滚动与命中测试由框架保证；
+- 尺寸用 `double` 或 `MediaQuery` 计算，不需要单位字符串；
+- Flex 行为符合标准语义，`Expanded`/`Flexible` 可安全使用。
 
 ### 4. 开发验证流程
 ```bash
-chatdev              # 改前端：9 秒出截图
-chatdev --apk        # 改原生：20 秒
+flutter analyze                 # 静态检查
+flutter run -d <device>         # 热重载调试
 ```
-截图固定落在 `/tmp/last.png`。
+CI 由 `.github/workflows/flutter.yml` 负责四平台构建。
 
 ---
 
@@ -155,7 +154,7 @@ chatdev --apk        # 改原生：20 秒
 - [ ] 页面能正常渲染（截图确认）
 - [ ] 主流程走通（真机点击操作，非仅接口测试）
 - [ ] 错误提示准确（不吞异常）
-- [ ] 无 Lynx 渲染错误（`adb logcat | grep LynxError`）
+- [ ] Flutter 无布局溢出（`flutter analyze` 无 warning）
 
 ---
 

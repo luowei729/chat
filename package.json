@@ -2,7 +2,7 @@
   "name": "chat",
   "version": "2.0.0",
   "private": true,
-  "description": "chat - 跨端即时通讯（Lynx + TypeScript）",
+  "description": "chat - 跨端即时通讯（Flutter 客户端 + Fastify 后端）",
   "packageManager": "pnpm@9.15.4",
   "engines": {
     "node": ">=22"

@@ -20,16 +20,17 @@
 
 ## 三、代码组织规则
 ```
-apps/app         ReactLynx 客户端（安卓/iOS/鸿蒙）
-apps/web         网页版（ReactLynx Web）
-apps/desktop     Electron 桌面端（Win/macOS）
+apps/client      Flutter 客户端（Android/iOS/Windows/macOS/鸿蒙，唯一客户端）
 apps/server      Fastify 后端 + WS + 通话信令
 packages/shared  前后端共享类型/校验/常量（唯一契约真相源）
 ```
 
-- 不允许跨层直接引用（`apps/*` 之间不能互相 import，只能通过 `@chat/shared`）。
+- 不允许跨层直接引用（不同 app 之间不能互相 import）。
 - 新增接口必须先改 `packages/shared`，再改后端，最后改客户端。
 - 数据库变更必须走 `drizzle-kit generate` 生成迁移文件，不允许手写 DDL 后不提交迁移。
+- 客户端是 **Flutter（Dart）**，不再使用 TypeScript 写 UI。
+  与后端的契约仍以 `packages/shared/src/types.ts`、`ws.ts` 为准，
+  Dart 侧镜像在 `apps/client/lib/core/models.dart`，改字段要两边同步。
 
 ## 四、编译铁律
 - **服务器（2C1.8G）绝不做任何编译**，所有产物由 GitHub Actions 构建。

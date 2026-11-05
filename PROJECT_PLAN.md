@@ -23,15 +23,18 @@
 
 | 层 | 选型 | 理由 |
 |---|---|---|
-| 客户端框架 | **ReactLynx**（`@lynx-js/react`） | Lynx 官方唯一一等公民，Vue 方案为个人 pre-alpha 仓库 |
-| 构建 | **Rspeedy**（`@lynx-js/rspeedy`） | 官方工具链，可同时出 lynx 与 web 产物 |
-| 桌面端 | **Electron** | 与客户端共用 TSX，Chromium 自带 WebRTC |
-| 后端 | **Node 22 + Fastify 5** | 与前端共享 TS 类型，内存占用低（~100MB） |
+| 客户端框架 | **Flutter 3.35.7** | 一套代码覆盖 Android/iOS/Windows/macOS；鸿蒙由 SIG 分支支持；WebRTC/WS/媒体插件生态成熟 |
+| 鸿蒙构建 | **openharmony-sig/flutter_flutter**（`oh-3.35.7-release`） | 与标准 Flutter 版本号对齐，`flutter build hap` 直接出 HAP |
+| 通话 | **flutter_webrtc + WebRTC P2P Mesh + coturn** | 服务器零媒体转发，2C1.8G 完全够用 |
+| 后端 | **Node 22 + Fastify 5** | 内存占用低（~100MB），与契约层共享 TS 类型 |
 | ORM | **Drizzle** | 无运行时反射，2G 服务器友好 |
 | 数据库 | **MySQL 8.4**（复用现有容器） | 已运行，零额外内存 |
-| 通话 | **WebRTC P2P Mesh + coturn** | 服务器零媒体转发，2C1.8G 完全够用 |
 | 推送 | APNs / HMS / 小米 / OPPO / vivo / Harmony | 国内 Android 无 GMS，必须厂商通道 |
 | 编译 | **GitHub Actions** | 服务器不做任何编译 |
+
+> 变更记录（2026-11-05）：原选型为 ReactLynx + Rspeedy + Electron，
+> 因 Lynx 引擎缺 WebSocket/WebRTC/Storage 且布局/hit-test 不可靠，
+> 已迁移到 Flutter 并删除 Lynx 客户端。
 
 ---
 
@@ -39,12 +42,11 @@
 
 ```mermaid
 graph TB
-  subgraph Client["客户端（一套 TSX）"]
-    A[Android<br/>LynxView]
-    B[iOS<br/>LynxView]
-    C[Harmony<br/>LynxView]
-    D[Windows/macOS<br/>Electron]
-    E[Web<br/>Lynx for Web]
+  subgraph Client["客户端（一套 Dart 代码）"]
+    A[Android]
+    B[iOS]
+    C[HarmonyOS<br/>SIG Flutter]
+    D[Windows/macOS]
   end
   Client -->|443 HTTPS/WSS| O[OpenResty]
   O -->|/api/*| N[Fastify :8787]
@@ -89,7 +91,7 @@ A ⟷ B ⟷ C  ← 媒体 P2P 直连（每路 Opus ~40kbps）
 ```
 /
 ├── apps/
-│   ├── app/          ReactLynx 客户端（安卓/iOS/鸿蒙）
+│   ├── client/       Flutter 客户端（Android/iOS/Windows/macOS/鸿蒙）
 │   ├── web/          网页版
 │   ├── desktop/      Electron（Win/macOS）
 │   └── server/       Fastify 后端
@@ -169,7 +171,7 @@ A ⟷ B ⟷ C  ← 媒体 P2P 直连（每路 Opus ~40kbps）
 | 阶段 | 内容 | 状态 |
 |---|---|---|
 | M1 | 后端骨架 + 认证 + 邀请 + 消息 + 上传 | ✅ 已完成并测试 |
-| M2 | ReactLynx 客户端页面 | 🚧 开发中 |
+| M2 | Flutter 客户端页面 | ✅ 完成 |
 | M3 | 三端原生模块（权限/录音/推送） | ⬜ |
 | M4 | GitHub Actions 六端出包 | ⬜ |
 | M5 | 部署上线 | ⬜ |

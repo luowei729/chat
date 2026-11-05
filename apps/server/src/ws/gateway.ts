@@ -10,8 +10,8 @@
  * 5. 通话信令：P2P offer/answer/ice 按 to 字段定向转发。
  *
  * 为什么不用 socket.io：
- * 原生 ws 协议更轻（2 核服务器省内存），且 Lynx 客户端用标准
- * WebSocket API 即可，不需要额外 SDK。
+ * 原生 ws 协议更轻（2 核服务器省内存），客户端用标准
+ * WebSocket API（Flutter 侧 `web_socket_channel`）即可，不需要额外 SDK。
  * ============================================================
  */
 

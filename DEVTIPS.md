@@ -4,19 +4,35 @@
 
 ---
 
-## 一、Lynx 能力边界（2026-10-29 核实，务必牢记）
+## 一、客户端技术栈（2026-11-05 定版）
 
-- **Lynx 没有任何 WebRTC API**。已检索内核 14235 文件、lynx-examples 2198、lynx-stack 10867，命中 0。
-- Lynx 内置 JS 模块仅有：`animation` `element` `event` `fetch` `nativeModules`(exposure/intersectionObserver/textInfo) `performance` `report` `selectorQuery` `sharedData`。
-- **没有** media / camera / recorder / rtc 模块。
-- WebRTC 只能通过两条路：① `<webview>` 加载 H5；② 写原生模块（`create-lynx-library` 的 `template-native-module`）。
-- Lynx 官方 `<webview>` 元素支持 **Android / iOS / Harmony** 三端，支持 `src` `html` `bindmessage` `eval`。
+- 客户端是 **Flutter 3.35.7 / Dart 3.9.2**，代码在 `apps/client`。
+- 历史原因保留一段记录：原实现基于 Lynx（ReactLynx），2026-11-05 已整体迁移到 Flutter
+  并删除。**不要再用 Lynx**，原因是引擎本身缺能力：
+  没有 WebSocket、没有 WebRTC、没有 Storage API，
+  `scroll-view` 会吞子元素点击、`flex:1` 会塌陷、原生桥接只能可靠传字符串。
+  这些问题导致当时大量 bug 只能靠手写补丁绕过（4,718 行 Kotlin + 15,000 行 TSX）。
+- 现在这些能力都由成熟插件承担：
+  WebSocket → `web_socket_channel`；WebRTC → `flutter_webrtc`；
+  存储 → `shared_preferences`；相机/相册 → `image_picker`；
+  文件 → `file_picker`；录音 → `record`；音频播放 → `just_audio`；视频 → `video_player`。
 
-## 二、框架选型铁律
+## 二、跨端铁律
 
-- 客户端**只能用 ReactLynx**（`@lynx-js/react`，官方维护，2026-10-23 更新）。
-- **不要用 `vue-lynx`**：个人仓库 `Huxpro/vue-lynx`，pre-alpha 血统，官方 UI 库/DevTool/文档全不覆盖。
-- 官方组件库 `@lynx-js/lynx-ui`，构建工具 `@lynx-js/rspeedy`。
+- 客户端**一套 Flutter 代码**覆盖 Android / iOS / Windows / macOS。
+- **鸿蒙用 SIG 分支**：`openharmony-sig/flutter_flutter` 的 `oh-<版本>-release`，
+  必须与标准 Flutter 版本号对齐（当前 3.35.7 对 `oh-3.35.7-release`）。
+  仓库已从 gitee 迁到 **gitcode.com**，gitee 那个是归档的旧地址。
+- 鸿蒙不是官方主线，插件需要 ohos 适配版（见 `openharmony-sig/flutter_packages`），
+  涉及 `flutter_webrtc` / `record` / `image_picker` 时要逐个确认真机可用。
+- 构建一律走 GitHub Actions：`.github/workflows/flutter.yml`
+  负责 Android/iOS/macOS/Windows；鸿蒙只能在有 OpenHarmony SDK 的机器上打（步骤见
+  `apps/client/README.md`）。
+- **`permission_handler` 13.x 与 Kotlin 2.1 不兼容**
+  （其 `android/build.gradle.kts` 用了 `compilerOptions`，直接让整个构建失败）。
+  本项目不需要它：`record` 自带麦克风权限、`image_picker`/`file_picker` 走系统选择器。
+
+---
 
 ## 三、通话架构（2026-10-29 定版）
 
@@ -64,45 +80,3 @@
 - 验证码只存 HMAC 哈希，不存明文（6 位数字不加密钥等于明文）。
 - 附件内容寻址存储（sha256 路径），相同文件只存一份。
 - 所有时间存 bigint 毫秒时间戳，跨时区无歧义。
-
-## 九、Lynx 构建与黑屏排查（2026-10-29 15:55 北京时间，实战验证）
-
-- **黑屏第一大坑：缺 `pluginReactLynx()`**
-  - Rspeedy 内置 `pluginLynx`（生成 `.bundle`），但**不内置** `@lynx-js/react-rsbuild-plugin`
-  - 缺它时 `rspeedy build` 会「成功」，但产物只是普通 webpack JS（`dist/static/js/main.*.js`），
-    Lynx 加载不到模板 → 黑屏
-  - 必须装 `@lynx-js/react-rsbuild-plugin` 并在 `lynx.config.ts` 的 `plugins` 里注册
-  - 正确产物：`dist/chat.lynx.bundle`（二进制 Lepus 模板，头部 `0.2.0.0` + 版本号）
-
-- **黑屏第二大坑：根节点用 `<view>` 而非 `<page>`**
-  - Lynx 的 `<page>` 提供全屏高度参照
-  - 用 `<view style={{height:'100%'}}>` 会因无父高度参照而塌陷为 0 → 黑屏
-  - 所有页面最外层必须是 `<page>`，内部再用 `<view>`
-
-- **必须 `output.dataUriLimit: Infinity`**：Lynx 不支持用 URL 加载本地资源，图片要内联
-
-- **APK 体积**：WebRTC 的 `libjingle_peerconnection_so.so` 单架构 6-12MB、`liblynx.so` 6-7MB
-  - 打全 4 架构 = 109MB；只打 `arm64-v8a + armeabi-v7a` = 50MB
-  - 模拟器调试用 `-PabiFilters=x86_64` 覆盖
-
-## 十、Lynx 布局铁律（2026-10-29 真机验证，注册页竖排/空白教训）
-
-- **text 不要直接加 flex**：`text` 是行内元素，加 `flexGrow` 会塌陷成 1 字宽，
-  中文标题变成竖排。正确做法：外层 `view` 加 `flex:1`，内层 `text` 只管居中。
-- **header 必须三段式**：左 `headerSide(64)` + 中 `headerCenter(flex:1 居中)` + 右 `headerSide(64)`，
-  这样标题永远真正居中，不受左右按钮宽度影响。
-- **scroll-view 必须加 `scroll-orientation="vertical"`**，否则不滚动；
-  且样式必须 `flex:1`，否则高度为 0 整页空白。
-- **不要用 `gap`**：老版本 Lynx Yoga 不支持，一律用 `margin` 代替
-  （`marginRight/marginBottom/marginTop`）。
-- **`input` 只有 `default-value`**（非受控），没有 `value` 属性；
-  靠 `bindinput` 同步 state，提交后输入框不会自动清空（这是正常的）。
-- **伸缩一律用 `flex:1` 简写**，不要拆 `flexGrow/flexBasis`。
-- **默认邀请码**：`CHAT8888`（invite_codes 表，100 次，长期有效），
-  注册页默认填好，用户零门槛体验。
-
-- **黑屏排查套路**：
-  1. `unzip -l app.apk | grep assets/` 确认 bundle 真的打进去了
-  2. `head -c 20 bundle` 看是否二进制模板（`b\xb6"$0.2.0.0`），若是 `(()=>{` 说明是纯 JS，配置错了
-  3. `adb logcat | grep -E "Lynx|MainActivity"` 看 bundle 加载字节数与渲染错误
-  4. MainActivity 已加 3 秒 `childCount==0` 检查，失败会显示可读错误而非黑屏

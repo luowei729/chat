@@ -6,6 +6,8 @@ import 'package:flutter/foundation.dart';
 
 import '../core/api.dart';
 import '../core/models.dart';
+import 'desktop_bridge.dart';
+import 'local_cache.dart';
 import 'session.dart';
 import 'ws.dart';
 
@@ -116,6 +118,22 @@ class ChatStore extends ChangeNotifier {
 
   Future<void> loadConversations({bool silent = false}) async {
     if (!_session.isAuthenticated) return;
+
+    /**
+     * 先把本地缓存摆上屏，再走网络
+     * ------------------------------------------------------------
+     * 否则冷启动 / 切到聊天 Tab 都会先白屏一下（等接口返回）。
+     * silent=true 表示背景刷新，此时不重置 loading，避免闪烁。
+     */
+    if (!conversationsLoaded) {
+      final cached = await LocalCache.instance.loadConversations();
+      if (cached.isNotEmpty) {
+        conversations = _sortConversations(cached);
+        conversationsLoaded = true;
+        notifyListeners();
+      }
+    }
+
     if (!silent) {
       conversationsLoading = true;
       notifyListeners();
@@ -124,6 +142,8 @@ class ChatStore extends ChangeNotifier {
       final list = await _api.listConversations();
       conversations = _sortConversations(list);
       conversationsLoaded = true;
+      // 落盘：下次冷启动直接可用
+      unawaited(LocalCache.instance.saveConversations(conversations));
     } on ApiException catch (e) {
       if (!silent) lastError = e.message;
     } finally {
@@ -166,6 +186,25 @@ class ChatStore extends ChangeNotifier {
     activeConversationId = conversationId;
     _ws.subscribe([conversationId]);
     clearUnread(conversationId);
+
+    // 用户已经来看这个会话了：停掉任务栏闪烁与右下角卡片
+    unawaited(DesktopBridge.instance.stopTaskbarFlash());
+    unawaited(DesktopBridge.instance.closeNotification());
+
+    /**
+     * 先用本地缓存渲染，再拉网络
+     * ------------------------------------------------------------
+     * 用户反复进出同一个会话时，不应该每次都等一次网络往返。
+     * 缓存命中就立即可见，网络请求在后台做「对齐」：
+     * 服务端为准，但保留本地还在发送中的占位（_mergeServerMessages）。
+     */
+    final cached = await LocalCache.instance.loadMessages(conversationId);
+    if (cached.isNotEmpty && messagesOf(conversationId).isEmpty) {
+      _messages[conversationId] = _sortMessages(cached);
+      // 缓存里已经有内容，说明大概率还有更早的可以上拉
+      _hasMore[conversationId] = true;
+      notifyListeners();
+    }
 
     // 已读水位先置为自己的最新，避免自己消息显示未读
     await _loadReads(conversationId);
@@ -233,23 +272,46 @@ class ChatStore extends ChangeNotifier {
     }
   }
 
-  /// 服务端数据合并：服务端为准，但保留本地「发送中/失败」的占位
+  /// 服务端数据合并
+  ///
+  /// 【不能简单「服务端为准」】
+  /// 服务端这一页只返回最近 30 条，而本地缓存可能有 200 条历史。
+  /// 直接替换会把更早的 170 条冲掉，用户上滑就再也翻不回去了
+  /// （虽然能重新拉，但白白多一次往返，观感也像「消息丢了」）。
+  ///
+  /// 三条规则：
+  ///   1. 服务端这一页 → 覆盖同 id 的本地版本（拿到最新撤回/编辑状态）；
+  ///   2. 本地 seq 更早（< 服务端最小 seq）→ 保留，那是已加载的历史；
+  ///   3. 本地「发送中/失败」的占位 → 保留；但如果它比服务端最新还旧，
+  ///      说明已被服务端处理过（可能是别设备发的同 clientId），丢弃避免重复。
   void _mergeServerMessages(String conversationId, List<Message> server, bool hasMore) {
     final existing = messagesOf(conversationId);
     final serverIds = server.map((m) => m.id).toSet();
     final serverClientIds = server.map((m) => m.clientId).whereType<String>().toSet();
 
+    final serverMinSeq = server.isEmpty ? 0 : server.first.seq;
+    final serverMaxSeq = server.isEmpty ? 0 : server.last.seq;
+
+    // 1. 保留本地已加载的更早历史
+    final olderLocal = existing
+        .where((m) => m.seq > 0 && m.seq < serverMinSeq)
+        .toList(growable: false);
+
+    // 2. 保留本地未完成的消息
     final pending = existing.where((m) {
       if (m.localStatus != LocalStatus.sending && m.localStatus != LocalStatus.failed) {
         return false;
       }
       if (serverIds.contains(m.id)) return false;
       if (m.clientId != null && serverClientIds.contains(m.clientId)) return false;
-      return true;
+      return m.seq <= 0 || m.seq > serverMaxSeq;
     });
 
-    _messages[conversationId] = _sortMessages([...server, ...pending]);
-    _hasMore[conversationId] = hasMore;
+    _messages[conversationId] = _sortMessages([...olderLocal, ...server, ...pending]);
+    // 本地还有更早的历史时保持可上拉，避免上滑入口消失
+    _hasMore[conversationId] = hasMore || olderLocal.isNotEmpty;
+    // 写回缓存：下次进会话直接用本地
+    unawaited(LocalCache.instance.saveMessages(conversationId, _messages[conversationId]!));
     notifyListeners();
   }
 
@@ -471,6 +533,7 @@ class ChatStore extends ChangeNotifier {
       clientId: message.clientId,
     );
     _messages[message.conversationId] = updated;
+    unawaited(LocalCache.instance.upsertMessage(updated[idx]));
     notifyListeners();
   }
 
@@ -480,6 +543,7 @@ class ChatStore extends ChangeNotifier {
     final list = messagesOf(message.conversationId);
     _messages[message.conversationId] =
         list.where((m) => m.id != message.id).toList(growable: false);
+    unawaited(LocalCache.instance.removeMessage(message.conversationId, message.id));
     notifyListeners();
   }
 
@@ -558,8 +622,43 @@ class ChatStore extends ChangeNotifier {
     }
 
     _messages[conversationId] = _sortMessages(list);
+    // 单条落盘，避免整会话重写
+    unawaited(LocalCache.instance.upsertMessage(incoming));
     _touchConversation(conversationId, incoming, incomingSelf: incoming.senderId == myId);
     notifyListeners();
+
+    // 桌面端提示（任务栏闪烁 + 右下角卡片）
+    unawaited(_notifyDesktop(conversationId, incoming));
+  }
+
+  /// 桌面端新消息提示
+  ///
+  /// 三条规则：
+  ///   1. 自己发的、当前正在看的会话 → 不打扰；
+  ///   2. 窗口在前台 → 只响一次任务栏闪烁，不弹卡片（像微信）；
+  ///   3. 窗口不在前台 → 卡片 + 闪烁（像 Telegram）。
+  ///
+  /// 移动端/鸿蒙上 DesktopBridge 会自己判定不可用，直接返回。
+  Future<void> _notifyDesktop(String conversationId, Message message) async {
+    if (message.senderId == myId) return;
+    if (activeConversationId == conversationId) return;
+
+    try {
+      final focused = await DesktopBridge.instance.isWindowFocused();
+      if (focused) {
+        // 在窗口里但不在这个会话：只闪任务栏，不弹卡片
+        await DesktopBridge.instance.flashTaskbar();
+        return;
+      }
+
+      final title = conversationById(conversationId)?.title ?? message.senderName;
+      await DesktopBridge.instance.showNotification(
+        title: title,
+        body: _summaryOf(message),
+      );
+    } catch (_) {
+      // 桌面能力缺失不影响聊天
+    }
   }
 
   void _onMessageUpdated(Map<String, dynamic> msg) {
@@ -572,6 +671,7 @@ class ChatStore extends ChangeNotifier {
     if (idx < 0) return;
     list[idx] = updatedMsg;
     _messages[conversationId] = list;
+    unawaited(LocalCache.instance.upsertMessage(updatedMsg));
     notifyListeners();
   }
 
@@ -581,6 +681,7 @@ class ChatStore extends ChangeNotifier {
     if (conversationId is! String || messageId is! String) return;
     final list = messagesOf(conversationId).where((m) => m.id != messageId).toList(growable: false);
     _messages[conversationId] = list;
+    unawaited(LocalCache.instance.removeMessage(conversationId, messageId));
     notifyListeners();
   }
 
@@ -589,12 +690,30 @@ class ChatStore extends ChangeNotifier {
     final userId = msg['userId'];
     final seq = msg['seq'];
     if (conversationId is! String || userId is! String) return;
-    final map = Map<String, int>.from(_reads[conversationId] ?? const {});
     final value = seq is int ? seq : (seq is num ? seq.toInt() : null);
     if (value == null) return;
-    if ((map[userId] ?? 0) >= value) return;
-    map[userId] = value;
+
+    final map = Map<String, int>.from(_reads[conversationId] ?? const {});
+    if ((map[userId] ?? 0) < value) map[userId] = value;
     _reads[conversationId] = map;
+
+    /**
+     * 同步刷新会话摘要里的 peerReadSeq
+     * ------------------------------------------------------------
+     * 对方读了消息，列表里的单勾要立刻变双勾——不能等下次拉列表。
+     * 群聊取「除我以外的最小值」，私聊就是对方那一个。
+     */
+    if (userId != myId) {
+      var peerSeq = 0;
+      for (final entry in map.entries) {
+        if (entry.key == myId) continue;
+        if (peerSeq == 0 || entry.value < peerSeq) peerSeq = entry.value;
+      }
+      conversations = conversations
+          .map((c) => c.id == conversationId ? c.copyWith(peerReadSeq: peerSeq) : c)
+          .toList(growable: false);
+    }
+
     notifyListeners();
   }
 
@@ -628,6 +747,8 @@ class ChatStore extends ChangeNotifier {
         pinned: c.pinned,
         muted: c.muted,
         createdAt: c.createdAt,
+        // 必须原样带回：否则重建时丢失已读水位，列表的双勾会退化成单勾
+        peerReadSeq: c.peerReadSeq,
       );
     }).toList(growable: false);
 
@@ -684,6 +805,8 @@ class ChatStore extends ChangeNotifier {
     _loadingMore.clear();
     _reads.clear();
     activeConversationId = null;
+    // 缓存里是上一个账号的聊天内容，必须清掉
+    unawaited(LocalCache.instance.clearAll());
     notifyListeners();
   }
 

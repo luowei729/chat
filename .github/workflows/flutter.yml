@@ -176,12 +176,42 @@ jobs:
       - run: flutter pub get
       - run: flutter build windows --release
 
-      - name: 打包
+      # ---------------- 生成 exe 安装包 ----------------
+      # windows-latest 镜像**预装** Inno Setup 6，不需要额外下载。
+      # 产物 chat-<version>-setup.exe：双击即装、带开始菜单与卸载项。
+      - name: 读取版本号
+        id: version
+        shell: pwsh
+        run: |
+          $line = Select-String -Path pubspec.yaml -Pattern '^version:\s*(.+)$' | Select-Object -First 1
+          $full = $line.Matches[0].Groups[1].Value.Trim()   # 形如 3.0.1+301
+          $name = ($full -split '\+')[0]
+          $code = ($full -split '\+')[1]
+          "name=$name"          >> $env:GITHUB_OUTPUT
+          "code=$code"          >> $env:GITHUB_OUTPUT
+          Write-Host "version=$name build=$code"
+
+      - name: 构建安装包（Inno Setup）
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            Write-Error "Inno Setup 未安装，镜像可能变了"
+            exit 1
+          }
+          & $iscc "/DAppVersion=${{ steps.version.outputs.name }}" "windows\installer\chat.iss"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-ChildItem build\windows\installer\*.exe | Format-Table Name, Length
+
+      - name: 打包（便携版 zip）
         shell: pwsh
         run: Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath "$env:GITHUB_WORKSPACE\chat-windows.zip"
 
       - uses: actions/upload-artifact@v4
         with:
           name: chat-windows
-          path: chat-windows.zip
+          # 同时上传：便携版 zip + exe 安装包
+          path: |
+            chat-windows.zip
+            apps/client/build/windows/installer/*.exe
           retention-days: 30

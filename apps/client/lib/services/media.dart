@@ -5,10 +5,9 @@ import 'dart:ui' as ui;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:just_audio/just_audio.dart';
+import 'package:media_kit/media_kit.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
-import 'package:video_player/video_player.dart';
 
 /// 选择结果：统一成本地路径 + 文件名 + 元数据
 class PickedMedia {
@@ -47,8 +46,9 @@ class RecordedAudio {
 ///   image_picker  → 相册/相机
 ///   file_picker   → 任意文件
 ///   record        → 录音 + 实时振幅（画波形）
-///   just_audio    → 语音播放
-///   video_player  → 视频播放/取时长
+///   media_kit     → 语音播放 + 视频播放 + 时长探测（全平台，含 Windows）
+///   record        → 录音 + 实时振幅（画波形）
+///   media_kit     → 语音/视频播放与时长探测（全平台，含 Windows/Linux）
 /// ============================================================
 class MediaService {
   MediaService._();
@@ -57,7 +57,16 @@ class MediaService {
 
   final ImagePicker _picker = ImagePicker();
   final AudioRecorder _recorder = AudioRecorder();
-  final AudioPlayer _player = AudioPlayer();
+
+  /// 语音播放器（media_kit / libmpv）
+  ///
+  /// 为什么不再用 just_audio：它没有 Windows 实现，
+  /// 在 Windows 上点语音气泡完全没声音也不报错。
+  Player? _player;
+
+  Player get _audioPlayer => _player ??= Player();
+
+  StreamSubscription<bool>? _completeSub;
 
   bool _recording = false;
 
@@ -187,32 +196,67 @@ class MediaService {
     }
   }
 
-  /// 尝试从 m4a 文件头读取时长（读不到就返回 null，由调用方兜底）
-  Future<int?> _readM4aDurationMs(String path) async {
+  /// 读取音/视频时长（media_kit 探测，不依赖平台实现）
+  ///
+  /// 实现：open 但不播放，等 duration 出来就关闭。
+  /// 不播时也拿不到 duration 的格式（如部分损坏文件）返回 null，
+  /// 由调用方用估算值兜底。
+  Future<int?> _mediaDurationMs(String path) async {
+    Player? probe;
     try {
-      final controller = VideoPlayerController.file(File(path));
-      await controller.initialize();
-      final d = controller.value.duration.inMilliseconds;
-      await controller.dispose();
-      return d > 0 ? d : null;
+      probe = Player(
+        configuration: const PlayerConfiguration(
+          // 不初始化视频输出，纯探测音频/容器元数据
+          muted: true,
+        ),
+      );
+      final durationFuture = probe.stream.duration.firstWhere(
+        (d) => d > Duration.zero,
+      );
+      await probe.open(Media(path), play: false);
+      final duration = await durationFuture.timeout(
+        const Duration(seconds: 5),
+        onTimeout: () => Duration.zero,
+      );
+      return duration.inMilliseconds > 0 ? duration.inMilliseconds : null;
     } catch (_) {
       return null;
+    } finally {
+      try {
+        await probe?.dispose();
+      } catch (_) {
+        // 忽略
+      }
     }
   }
+
+  /// 尝试从 m4a 读取时长（读不到就返回 null，由调用方兜底）
+  Future<int?> _readM4aDurationMs(String path) => _mediaDurationMs(path);
 
   /* ------------------------------------------------------------------ */
   /* 播放                                                                */
   /* ------------------------------------------------------------------ */
 
   /// 播放语音（单例播放器，切歌自动停止上一条）
-  Future<void> playAudio(String url, {void Function()? onComplete}) async {
+  ///
+  /// [source] 可以是本地文件绝对路径，也可以是 http(s) URL。
+  /// 优先传本地路径：媒体已缓存到磁盘，不必为了听 3 秒语音再走一次网络。
+  Future<void> playAudio(String source, {void Function()? onComplete}) async {
     try {
-      await _player.stop();
-      await _player.setUrl(url);
-      unawaited(_player.play());
-      _player.processingStateStream.firstWhere(
-        (state) => state == ProcessingState.completed,
-      ).then((_) => onComplete?.call()).catchError((_) {});
+      final player = _audioPlayer;
+      await _completeSub?.cancel();
+      _completeSub = null;
+
+      await player.stop();
+      await player.open(Media(source));
+
+      // media_kit 没有「播放结束回调」，靠 completed 流
+      _completeSub = player.stream.completed.listen((done) {
+        if (!done) return;
+        _completeSub?.cancel();
+        _completeSub = null;
+        onComplete?.call();
+      });
     } catch (_) {
       onComplete?.call();
     }
@@ -220,13 +264,15 @@ class MediaService {
 
   Future<void> stopAudio() async {
     try {
-      await _player.stop();
+      await _completeSub?.cancel();
+      _completeSub = null;
+      await _player?.stop();
     } catch (_) {
       // 忽略
     }
   }
 
-  Stream<bool> get playingStream => _player.playingStream;
+  Stream<bool> get playingStream => _audioPlayer.stream.playing;
 
   /* ------------------------------------------------------------------ */
   /* 元数据                                                              */
@@ -250,17 +296,7 @@ class MediaService {
     }
   }
 
-  Future<int?> videoDurationMs(String path) async {
-    try {
-      final controller = VideoPlayerController.file(File(path));
-      await controller.initialize();
-      final ms = controller.value.duration.inMilliseconds;
-      await controller.dispose();
-      return ms > 0 ? ms : null;
-    } catch (_) {
-      return null;
-    }
-  }
+  Future<int?> videoDurationMs(String path) => _mediaDurationMs(path);
 
   static String _filenameOf(String path, String fallback) {
     final name = path.split(Platform.pathSeparator).last;
@@ -283,7 +319,9 @@ class MediaService {
   }
 
   Future<void> dispose() async {
+    await _completeSub?.cancel();
     await _recorder.dispose();
-    await _player.dispose();
+    await _player?.dispose();
+    _player = null;
   }
 }

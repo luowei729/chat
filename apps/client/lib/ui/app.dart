@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../core/storage.dart';
 import '../services/calls.dart';
@@ -60,6 +61,30 @@ class _ChatAppState extends State<ChatApp> {
           theme: buildAppTheme(Brightness.light),
           darkTheme: buildAppTheme(Brightness.dark),
           themeMode: mode,
+          /**
+           * 全局状态栏/导航栏样式
+           * ------------------------------------------------------------
+           * edge-to-edge 之后系统栏是完全透明的，
+           * 图标颜色必须跟随主题，否则深色模式下会「黑字黑底」看不见。
+           * 放在这里是因为它要对所有页面生效（含无 AppBar 的通话页）。
+           */
+          builder: (context, child) {
+            final isDark = Theme.of(context).brightness == Brightness.dark;
+            return AnnotatedRegion<SystemUiOverlayStyle>(
+              value: SystemUiOverlayStyle(
+                statusBarColor: Colors.transparent,
+                statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
+                statusBarBrightness: isDark ? Brightness.dark : Brightness.light,
+                systemNavigationBarColor: Colors.transparent,
+                systemNavigationBarDividerColor: Colors.transparent,
+                systemNavigationBarIconBrightness:
+                    isDark ? Brightness.light : Brightness.dark,
+                systemNavigationBarContrastEnforced: false,
+                systemStatusBarContrastEnforced: false,
+              ),
+              child: child ?? const SizedBox.shrink(),
+            );
+          },
           home: const _RootGate(),
         );
       },

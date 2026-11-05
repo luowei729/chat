@@ -152,6 +152,7 @@ export async function loadLastMessages(
     if (result.has(row.conversationId)) continue;
     result.set(row.conversationId, {
       id: row.id,
+      seq: row.seq,
       type: row.type as MessagePreview['type'],
       senderId: row.senderId,
       senderName: row.senderName,
@@ -231,6 +232,21 @@ export async function listConversations(userId: string): Promise<ConversationSum
     const lastMessage = lastMessages.get(conv.id) ?? null;
     const lastSeq = conv.lastSeq;
 
+    /**
+     * 对方已读水位（列表页双勾用）
+     * ------------------------------------------------------------
+     * 私聊 = 对方的 lastReadSeq；群聊 = 除我以外最落后的那个。
+     * 群聊取最小值是微信/Telegram 的口径：只有所有人都读到，才算「已读」。
+     * 没有其他成员（如自己退群）时返回 0，客户端会显示单勾。
+     */
+    let peerReadSeq = 0;
+    for (const m of members) {
+      if (m.userId === userId) continue;
+      if (peerReadSeq === 0 || m.lastReadSeq < peerReadSeq) {
+        peerReadSeq = m.lastReadSeq;
+      }
+    }
+
     summaries.push({
       id: conv.id,
       type: conv.type as ConversationSummary['type'],
@@ -240,8 +256,12 @@ export async function listConversations(userId: string): Promise<ConversationSum
       memberCount: members.length,
       lastMessage,
       lastMessageAt: conv.lastMessageAt ?? null,
-      // 未读数：会话水位 - 我的已读水位，负值归零
+      /**
+       * 未读数：会话水位 - 我的已读水位，负值归零
+       * 注意与 peerReadSeq 区分：这个是我的未读，那个是对方的已读。
+       */
       unreadCount: Math.max(0, lastSeq - meta.lastReadSeq),
+      peerReadSeq,
       pinned: meta.pinned,
       muted: meta.muted,
       createdAt: conv.createdAt,

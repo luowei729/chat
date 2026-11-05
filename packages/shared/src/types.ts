@@ -188,6 +188,17 @@ export interface ConversationSummary {
   lastMessage: MessagePreview | null;
   lastMessageAt: number | null;
   unreadCount: number;
+  /**
+   * 对方已读到哪一条（会话内 seq）
+   * ------------------------------------------------------------
+   * 列表页要显示「我发的最后一条是否已被读」，靠 client 自己算不出来：
+   * 已读水位属于其他成员，只能由服务端下发。
+   * 私聊 = 对方的水位；群聊 = 除我以外所有成员里最落后的那个。
+   *
+   * 判定：lastMessage.senderId === 我 && peerReadSeq >= lastMessage.seq
+   *       → 双勾；否则单勾。
+   */
+  peerReadSeq?: number;
   /** 是否置顶 */
   pinned: boolean;
   /** 是否免打扰 */
@@ -198,6 +209,11 @@ export interface ConversationSummary {
 /** 会话列表里的消息摘要（只保留渲染一行所需字段，减小列表接口体积） */
 export interface MessagePreview {
   id: string;
+  /**
+   * 消息在会话内的序号
+   * 用于与 peerReadSeq 比较判定是否已读（列表页的双勾）。
+   */
+  seq?: number;
   type: MessageType;
   senderId: string;
   senderName: string;

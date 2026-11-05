@@ -183,6 +183,7 @@ class MessagePreview {
     required this.senderName,
     required this.summary,
     required this.createdAt,
+    this.seq = 0,
   });
 
   final String id;
@@ -192,6 +193,9 @@ class MessagePreview {
   final String summary;
   final int createdAt;
 
+  /// 消息在会话内的序号（用于与 peerReadSeq 比较判定已读）
+  final int seq;
+
   factory MessagePreview.fromJson(Map<String, dynamic> j) => MessagePreview(
         id: _str(j['id']),
         type: _str(j['type'], 'text'),
@@ -199,7 +203,18 @@ class MessagePreview {
         senderName: _str(j['senderName']),
         summary: _str(j['summary']),
         createdAt: _int(j['createdAt']),
+        seq: _int(j['seq']),
       );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'type': type,
+        'senderId': senderId,
+        'senderName': senderName,
+        'summary': summary,
+        'createdAt': createdAt,
+        'seq': seq,
+      };
 }
 
 class ConversationSummary {
@@ -216,6 +231,7 @@ class ConversationSummary {
     this.pinned = false,
     this.muted = false,
     this.createdAt = 0,
+    this.peerReadSeq = 0,
   });
 
   final String id;
@@ -231,9 +247,25 @@ class ConversationSummary {
   final bool muted;
   final int createdAt;
 
+  /// 对方已读到哪一条（私聊=对方；群聊=最落后成员）
+  final int peerReadSeq;
+
   bool get isGroup => type == 'group';
 
-  ConversationSummary copyWith({int? unreadCount, MessagePreview? lastMessage, int? lastMessageAt}) =>
+  /// 列表里最新一条是「我发的」且对方已读 → 双勾
+  bool get lastMessageReadByPeer =>
+      lastMessage != null &&
+      lastMessage!.senderId.isNotEmpty &&
+      peerReadSeq > 0 &&
+      lastMessage!.seq > 0 &&
+      peerReadSeq >= lastMessage!.seq;
+
+  ConversationSummary copyWith({
+    int? unreadCount,
+    MessagePreview? lastMessage,
+    int? lastMessageAt,
+    int? peerReadSeq,
+  }) =>
       ConversationSummary(
         id: id,
         type: type,
@@ -247,6 +279,7 @@ class ConversationSummary {
         pinned: pinned,
         muted: muted,
         createdAt: createdAt,
+        peerReadSeq: peerReadSeq ?? this.peerReadSeq,
       );
 
   factory ConversationSummary.fromJson(Map<String, dynamic> j) => ConversationSummary(
@@ -262,7 +295,24 @@ class ConversationSummary {
         pinned: j['pinned'] == true,
         muted: j['muted'] == true,
         createdAt: _int(j['createdAt']),
+        peerReadSeq: _int(j['peerReadSeq']),
       );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'type': type,
+        'title': title,
+        'avatarUrl': avatarUrl,
+        'peerId': peerId,
+        'memberCount': memberCount,
+        'lastMessage': lastMessage?.toJson(),
+        'lastMessageAt': lastMessageAt,
+        'unreadCount': unreadCount,
+        'pinned': pinned,
+        'muted': muted,
+        'createdAt': createdAt,
+        'peerReadSeq': peerReadSeq,
+      };
 }
 
 class ConversationDetail {
@@ -358,6 +408,23 @@ class Attachment {
         expired: j['expired'] == true,
         expiringSoon: j['expiringSoon'] == true,
       );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'kind': kind,
+        'filename': filename,
+        'mime': mime,
+        'size': size,
+        'url': url,
+        'thumbUrl': thumbUrl,
+        'width': width,
+        'height': height,
+        'durationMs': durationMs,
+        'waveform': waveform,
+        'expiresAt': expiresAt,
+        'expired': expired,
+        'expiringSoon': expiringSoon,
+      };
 }
 
 /// 本地发送状态（仅客户端使用）
@@ -466,6 +533,26 @@ class Message {
         clientId: _strOrNull(j['clientId']),
         deleted: j['deletedAt'] != null || j['deleted'] == true,
       );
+
+  /// 序列化（本地缓存用）
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'conversationId': conversationId,
+        'seq': seq,
+        'senderId': senderId,
+        'senderName': senderName,
+        'senderAvatarUrl': senderAvatarUrl,
+        'type': type,
+        'text': text,
+        'attachments': attachments.map((a) => a.toJson()).toList(growable: false),
+        'replyToId': replyToId,
+        'replyToPreview': replyToPreview?.toJson(),
+        'createdAt': createdAt,
+        'editedAt': editedAt,
+        'deletedAt': deletedAt,
+        'clientId': clientId,
+        'deleted': deleted,
+      };
 }
 
 class MessagePage {

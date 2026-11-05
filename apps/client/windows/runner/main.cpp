@@ -4,6 +4,7 @@
 
 #include "flutter_window.h"
 #include "utils.h"
+#include "window_state.h"
 
 int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
                       _In_ wchar_t *command_line, _In_ int show_command) {
@@ -25,12 +26,38 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   project.set_dart_entrypoint_arguments(std::move(command_line_arguments));
 
   FlutterWindow window(project);
-  Win32Window::Point origin(10, 10);
-  Win32Window::Size size(1280, 720);
-  if (!window.Create(L"chat", origin, size)) {
+
+  // ------------------------------------------------------------
+  // 恢复上次的窗口位置与尺寸
+  // ------------------------------------------------------------
+  // 必须在 Create 之前读到值，否则会先按默认尺寸闪一下再跳变。
+  // LoadWindowPlacement 内部会校验矩形是否落在当前可见的显示器上，
+  // 用户拔掉外接屏后不会出现「窗口跑到屏幕外」。
+  WindowPlacement placement;
+  const bool restored = LoadWindowPlacement(&placement);
+
+  Win32Window::Point origin(placement.x, placement.y);
+  Win32Window::Size size(placement.width, placement.height);
+
+  if (!restored) {
+    // 首次启动（或旧坐标已失效）：居中显示，尺寸用默认值
+    const int screen_width = ::GetSystemMetrics(SM_CXSCREEN);
+    const int screen_height = ::GetSystemMetrics(SM_CYSCREEN);
+    const int x = (screen_width - static_cast<int>(size.width)) / 2;
+    const int y = (screen_height - static_cast<int>(size.height)) / 2;
+    origin = Win32Window::Point(x < 0 ? 0 : x, y < 0 ? 0 : y);
+  }
+
+  if (!window.Create(L"Chat", origin, size)) {
     return EXIT_FAILURE;
   }
   window.SetQuitOnClose(true);
+
+  // 上次是最大化：创建完成后再还原（Create 里用 normal 尺寸，
+  // 这样用户点「还原」时回到的是他真正调整过的大小）
+  if (restored && placement.maximized) {
+    ::ShowWindow(window.GetHandle(), SW_SHOWMAXIMIZED);
+  }
 
   ::MSG msg;
   while (::GetMessage(&msg, nullptr, 0, 0)) {

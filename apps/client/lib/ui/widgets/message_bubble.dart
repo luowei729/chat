@@ -2,9 +2,9 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
-import '../../core/config.dart';
 import '../../core/models.dart';
 import '../theme.dart';
+import 'cached_media.dart';
 import 'common.dart';
 
 /// 消息气泡
@@ -170,12 +170,13 @@ class MessageBubble extends StatelessWidget {
 
   Widget _imageContent(BuildContext context, AppColors c) {
     final att = message.firstAttachment;
-    final localPath = message.localFilePath;
-    final remote = att == null ? '' : AppConfig.mediaUrl(att.url);
+    if (att == null) {
+      return _expiredBox(c, 200, 150);
+    }
 
     double width = 200;
     double height = 150;
-    if (att?.width != null && att?.height != null && att!.width! > 0) {
+    if (att.width != null && att.height != null && att.width! > 0) {
       final ratio = att.height! / att.width!;
       height = width * ratio;
       if (height > 280) {
@@ -185,37 +186,19 @@ class MessageBubble extends StatelessWidget {
       if (height < 80) height = 80;
     }
 
-    Widget image;
-    if (localPath != null && File(localPath).existsSync()) {
-      image = Image.file(File(localPath), width: width, height: height, fit: BoxFit.cover);
-    } else if (att?.expired == true || remote.isEmpty) {
-      image = _expiredBox(c, width, height);
-    } else {
-      image = Image.network(
-        remote,
-        width: width,
-        height: height,
-        fit: BoxFit.cover,
-        loadingBuilder: (_, child, progress) => progress == null
-            ? child
-            : SizedBox(
-                width: width,
-                height: height,
-                child: Center(
-                  child: SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: c.textMuted),
-                  ),
-                ),
-              ),
-        errorBuilder: (_, __, ___) => _expiredBox(c, width, height),
-      );
-    }
-
+    // 图片优先走本地缓存（只下载一次），失败才回退网络
     return GestureDetector(
       onTap: onMediaTap,
-      child: SizedBox(width: width, height: height, child: image),
+      child: SizedBox(
+        width: width,
+        height: height,
+        child: CachedAttachmentImage(
+          attachment: att,
+          width: width,
+          height: height,
+          localFilePath: message.localFilePath,
+        ),
+      ),
     );
   }
 

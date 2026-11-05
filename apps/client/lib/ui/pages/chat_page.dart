@@ -10,6 +10,7 @@ import '../../core/models.dart';
 import '../../services/calls.dart';
 import '../../services/chat_store.dart';
 import '../../services/media.dart';
+import '../../services/media_resolver.dart';
 import '../../services/session.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
@@ -417,14 +418,20 @@ class _ChatPageState extends State<ChatPage> {
 
   void _openMedia(Message message) {
     final att = message.firstAttachment;
-    final isVideo = message.type == 'video';
+    if (att == null) {
+      showError(context, '文件已过期或无法加载');
+      return;
+    }
+    // 鸿蒙暂缺媒体播放插件：明确提示，而不是点了没反应
+    if (message.type == 'video' && !Capabilities.canPlayVideo) {
+      showError(context, Capabilities.unsupportedReason('视频播放'));
+      return;
+    }
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => MediaViewerPage(
-          title: att?.filename ?? (isVideo ? '视频' : '图片'),
-          imageUrl: isVideo ? null : AppConfig.mediaUrl(att?.url),
-          videoUrl: isVideo ? AppConfig.mediaUrl(att?.url) : null,
-          localPath: message.localFilePath,
+          attachment: att,
+          localFilePath: message.localFilePath,
         ),
       ),
     );
@@ -443,8 +450,12 @@ class _ChatPageState extends State<ChatPage> {
       return;
     }
     setState(() => _playingMessageId = message.id);
+
+    // 本地缓存优先：听过一次之后不再走网络
+    final local = message.localFilePath ??
+        await MediaResolver.instance.resolveLocal(att);
     await _media.playAudio(
-      AppConfig.mediaUrl(att.url),
+      local ?? AppConfig.mediaUrl(att.url),
       onComplete: () {
         if (mounted) setState(() => _playingMessageId = null);
       },

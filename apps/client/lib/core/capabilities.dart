@@ -36,8 +36,16 @@ class Capabilities {
   /// 依赖 `record`，鸿蒙暂无适配 → false。
   static bool get canVoiceMessage => !isHarmony;
 
-  /// 能否播放语音消息（鸿蒙缺 `just_audio`，播放待原生补齐）
+  /// 能否播放语音消息
+  ///
+  /// Windows/Linux 上 just_audio 无实现，已整体改用 media_kit，
+  /// 而 media_kit 暂无鸿蒙适配 → 仅鸿蒙关闭。
   static bool get canPlayAudio => !isHarmony;
+
+  /// 能否播放视频
+  ///
+  /// 同理：video_player 没有 Windows 实现，已改用 media_kit。
+  static bool get canPlayVideo => !isHarmony;
 
   /// 能否从相册/相机取图（image_picker 三端都有适配）
   static bool get canPickMedia => true;

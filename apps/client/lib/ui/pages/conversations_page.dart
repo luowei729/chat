@@ -154,6 +154,15 @@ class _ConversationTile extends StatelessWidget {
                   const SizedBox(height: 4),
                   Row(
                     children: [
+                      // 自己发的最后一条要显示单/双勾（与聊天页一致的口径）
+                      if (isSelfLast && preview != null) ...[
+                        Icon(
+                          item.lastMessageReadByPeer ? Icons.done_all : Icons.done,
+                          size: 14,
+                          color: item.lastMessageReadByPeer ? c.primary : c.textFaint,
+                        ),
+                        const SizedBox(width: 4),
+                      ],
                       Expanded(
                         child: Text(
                           subtitle,

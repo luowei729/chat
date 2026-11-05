@@ -53,35 +53,56 @@ class _CallPageState extends State<CallPage> {
     return Scaffold(
       backgroundColor: c.bg,
       body: SafeArea(
-        child: Column(
-          children: [
-            const SizedBox(height: 64),
-            Avatar(name: _call.peerName.isEmpty ? '通话' : _call.peerName, size: 96),
-            const SizedBox(height: AppSpacing.lg),
-            Text(
-              _call.peerName.isEmpty ? '语音通话' : _call.peerName,
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600, color: c.text),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Text(
-              _statusText(phase),
-              style: TextStyle(fontSize: 14, color: c.textMuted),
-            ),
-            if (_call.error != null) ...[
-              const SizedBox(height: AppSpacing.sm),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
-                child: Text(
-                  _call.error!,
+        /**
+         * 布局约束（Windows 上「按钮不居中」的修复）
+         * ------------------------------------------------------------
+         * 两个必要的约束：
+         *   1. crossAxisAlignment.center + 居中文本：桌面窗口很宽，
+         *      不显式居中时内容会靠左（Row/Column 的默认行为在
+         *      宽屏下不够可靠）；
+         *   2. 按钮组限制最大宽度（360）：桌面全屏时 spaceEvenly
+         *      会把三个按钮抳到屏幕两端，看着像「没居中」。
+         */
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                const SizedBox(height: 64),
+                Avatar(name: _call.peerName.isEmpty ? '通话' : _call.peerName, size: 96),
+                const SizedBox(height: AppSpacing.lg),
+                Text(
+                  _call.peerName.isEmpty ? '语音通话' : _call.peerName,
                   textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 13, color: c.danger),
+                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600, color: c.text),
                 ),
-              ),
-            ],
-            const Spacer(),
-            _buttons(c, phase),
-            const SizedBox(height: 48),
-          ],
+                const SizedBox(height: AppSpacing.sm),
+                Text(
+                  _statusText(phase),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 14, color: c.textMuted),
+                ),
+                if (_call.error != null) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
+                    child: Text(
+                      _call.error!,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 13, color: c.danger),
+                    ),
+                  ),
+                ],
+                const Spacer(),
+                SizedBox(
+                  width: double.infinity,
+                  child: _buttons(c, phase),
+                ),
+                const SizedBox(height: 48),
+              ],
+            ),
+          ),
         ),
       ),
     );

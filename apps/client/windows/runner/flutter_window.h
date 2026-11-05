@@ -2,7 +2,9 @@
 #define RUNNER_FLUTTER_WINDOW_H_
 
 #include <flutter/dart_project.h>
+#include <flutter/encodable_value.h>
 #include <flutter/flutter_view_controller.h>
+#include <flutter/method_channel.h>
 
 #include <memory>
 
@@ -23,11 +25,18 @@ class FlutterWindow : public Win32Window {
                          LPARAM const lparam) noexcept override;
 
  private:
+  // 注册桌面能力通道（任务栏闪烁 / 右下角通知 / 焦点查询）
+  void RegisterDesktopChannel();
+
   // The project to run.
   flutter::DartProject project_;
 
   // The Flutter instance hosted by this window.
   std::unique_ptr<flutter::FlutterViewController> flutter_controller_;
+
+  // pub.lkz.chat/desktop：Dart 侧调用 Windows 原生能力
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      desktop_channel_;
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_

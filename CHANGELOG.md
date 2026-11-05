@@ -2,6 +2,44 @@
 
 > 所有时间均为北京时间（UTC+8）。
 
+## 2026-11-05
+
+### ★ 客户端迁移到 Flutter（v3.0 客户端）
+
+**决策背景**：Lynx 引擎缺 WebSocket / WebRTC / Storage，
+`scroll-view` 吞点击、`flex:1` 塌陷、原生桥接只能可靠传字符串。
+这些问题导致大量功能只能靠手写补丁绕过（15,000 行 TSX + 4,718 行 Kotlin），
+仍不断出现新 bug。经确认后整体迁移到 Flutter，**后端与契约层零改动**。
+
+- 新增 `apps/client`（Flutter 3.35.7 / Dart 3.9.2），一套代码覆盖
+  Android / iOS / Windows / macOS；鸿蒙走 SIG 分支 `oh-3.35.7-release`
+- 删除旧 Lynx 客户端 `apps/app` 与 `android.yml`
+- 新增 `.github/workflows/flutter.yml`：Android/iOS/macOS/Windows 四平台构建
+- 新增 `docs/HARMONY.md`：鸿蒙插件适配现状与缺口（`flutter_webrtc`、`record`
+  无 ohos 实现，需 ArkTS 补齐），代码里用 `Capabilities` 做能力降级
+
+### v3.0.0 — 功能验证与缺陷修复
+
+- **服务端修复：同一文件第二次发送必然失败**
+  上传按 sha256 全局去重，第二次上传返回的是「已绑定消息」的旧附件行，
+  发送时命中 `ATTACHMENT_ALREADY_BOUND`（附件已被使用）。
+  改为只复用「同上传者 + 未绑定」的附件行；物理文件仍按 sha256 只存一份。
+  顺带修掉「A 传过的文件 B 上传后拿到 A 的附件行，发送报不能引用他人附件」。
+- **语音气泡波形不可见**：柱子用 `Expanded` 均分，2″ 短语音下每根不足 1px。
+  改为按可用宽度反算柱数 + 固定 2.5px 柱宽，气泡最小宽度提到 170。
+- **通话页向用户暴露内部枚举**（`RTCPeerConnectionStateConnected`），
+  改为只显示「已接通」/「网络重连中…」。
+- 发送失败不再静默：新增 `ChatStore.lastSendError`，气泡可看到真实原因。
+- 新增集成测试 `integration_test/media_test.dart`：图片/视频/文件/语音
+  四条链路在真机上跑真实插件与真实网络，验证上传元数据（宽高/时长/波形）
+  全部落库。
+
+**实测结果（Android 14 模拟器）**
+- 媒体：4/4 通过（图片宽高、视频时长 3000ms、文件 45B、语音波形均正确持久化）
+- 通话：B→A 呼叫、A 接听、P2P `connected`、双向计时、静音切换、
+  挂断双端同步退出，全部正常
+- 真实录音（按住说话）验证通过，上传 11.5KB m4a 并正确显示波形
+
 ## 2026-10-31
 
 ### v2.5.0 — 聊天滚动 + 语音通话可用

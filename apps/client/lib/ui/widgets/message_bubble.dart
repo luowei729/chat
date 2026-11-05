@@ -290,8 +290,9 @@ class MessageBubble extends StatelessWidget {
     final att = message.firstAttachment;
     final duration = att?.durationMs ?? 0;
     final waveform = att?.waveform;
-    // 气泡宽度随时长增长（微信手感）
-    final width = (100 + (duration / 1000) * 12).clamp(120.0, 220.0);
+    // 气泡宽度随时长增长（微信手感），但下限要够宽，
+    // 否则短语音（2″）里波形区只剩几十像素，柱子根本看不见。
+    final width = (140 + (duration / 1000) * 14).clamp(170.0, 240.0);
 
     return GestureDetector(
       onTap: onAudioTap,
@@ -308,9 +309,18 @@ class MessageBubble extends StatelessWidget {
             ),
             const SizedBox(width: 6),
             Expanded(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: _bars(waveform, c),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  // 按可用宽度反算柱子数量：固定柱宽 + 间距，
+                  // 保证每根都有 2.5px，不会因为均分而细到看不见。
+                  const barWidth = 2.5;
+                  const gap = 1.6;
+                  final fit = constraints.maxWidth.isFinite
+                      ? ((constraints.maxWidth + gap) / (barWidth + gap)).floor()
+                      : 20;
+                  final count = fit.clamp(4, 48);
+                  return _bars(waveform, c, count, barWidth, gap);
+                },
               ),
             ),
             const SizedBox(width: 8),
@@ -328,32 +338,37 @@ class MessageBubble extends StatelessWidget {
     );
   }
 
-  List<Widget> _bars(List<int>? waveform, AppColors c) {
-    final bars = waveform != null && waveform.isNotEmpty
+  /// 画波形柱
+  ///
+  /// 没有波形数据（旧消息 / 上传丢了 waveform）时用确定性伪随机，
+  /// 保证同一条消息每次高度一致，不会因重建而跳动。
+  Widget _bars(List<int>? waveform, AppColors c, int count, double barWidth, double gap) {
+    final source = waveform != null && waveform.isNotEmpty
         ? waveform
-        // 没有波形时用确定性伪随机，保证同一条消息每次高度一致
-        : List<int>.generate(28, (i) => 20 + ((i * 37) % 60));
+        : List<int>.generate(count, (i) => 20 + ((i * 37) % 60));
 
-    final count = bars.length > 40 ? 40 : bars.length;
-    final step = bars.length / count;
+    final step = source.length / count;
 
-    return List<Widget>.generate(count, (i) {
-      final value = bars[(i * step).floor().clamp(0, bars.length - 1)];
-      return Expanded(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 0.8),
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: List<Widget>.generate(count, (i) {
+        final raw = source[(i * step).floor().clamp(0, source.length - 1)];
+        final h = raw.clamp(10, 100) * 0.22 + 4;
+        return SizedBox(
+          width: barWidth,
           child: Container(
-            height: (value.clamp(10, 100) as num) * 0.22 + 4,
+            height: h,
             decoration: BoxDecoration(
               color: isSelf
                   ? c.bubbleSelfText.withValues(alpha: 0.9)
                   : c.primary.withValues(alpha: 0.7),
-              borderRadius: BorderRadius.circular(2),
+              borderRadius: BorderRadius.circular(barWidth / 2),
             ),
           ),
-        ),
-      );
-    });
+        );
+      }),
+    );
   }
 
   Widget _fileContent(AppColors c) {

@@ -72,7 +72,7 @@ class MediaService {
       maxWidth: 2560,
     );
     if (file == null) return null;
-    final size = await _imageSize(file.path);
+    final size = await imageSizeOf(file.path);
     return PickedMedia(
       path: file.path,
       filename: _filenameOf(file.path, fromCamera ? 'photo.jpg' : 'image.jpg'),
@@ -115,7 +115,6 @@ class MediaService {
   Future<bool> startRecording() async {
     if (_recording) return true;
     if (!await _recorder.hasPermission()) return false;
-
     final dir = await getTemporaryDirectory();
     final path = '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
 
@@ -130,6 +129,17 @@ class MediaService {
     );
     _recording = true;
     return true;
+  }
+
+  /// 只检查录音权限，**不弹**系统授权框
+  ///
+  /// 用途：自动化测试无法应答系统弹窗，需要先探测再决定走哪条路径。
+  Future<bool> hasRecordingPermission() async {
+    try {
+      return await _recorder.hasPermission(request: false);
+    } catch (_) {
+      return false;
+    }
   }
 
   /// 停止录音并返回结果（波形按 100ms 采样，最多 100 个点）
@@ -222,7 +232,10 @@ class MediaService {
   /* 元数据                                                              */
   /* ------------------------------------------------------------------ */
 
-  Future<({int width, int height})?> _imageSize(String path) async {
+  /// 读取图片真实宽高
+  ///
+  /// 公开是为了可测：图片气泡依赖宽高算比例，宽高丢了会变成方块。
+  Future<({int width, int height})?> imageSizeOf(String path) async {
     try {
       final bytes = await File(path).readAsBytes();
       final codec = await ui.instantiateImageCodec(bytes);

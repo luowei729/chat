@@ -20,14 +20,24 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "pub.lkz.chat"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        /**
+         * 双开联调开关
+         * ------------------------------------------------------------
+         * 同一台设备要同时登录两个账号才能测「互发消息 / 互打电话」。
+         *
+         *   ./gradlew assembleDebug -PdualApp     → 包名 pub.lkz.chat.b
+         *
+         * 只在 debug 用；发布包永远是 pub.lkz.chat。
+         */
+        if (project.hasProperty("dualApp")) {
+            applicationIdSuffix = ".b"
+        }
     }
 
     buildTypes {

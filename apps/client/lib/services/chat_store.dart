@@ -134,6 +134,11 @@ class ChatStore extends ChangeNotifier {
 
   String? lastError;
 
+  /// 最近一次「发送媒体失败」的真实原因
+  /// 以前这里只标 localStatus=failed，用户和测试都看不到为什么失败；
+  /// 现在把底层异常文案留下来，气泡重试与排查都有据可依。
+  String? lastSendError;
+
   static List<ConversationSummary> _sortConversations(List<ConversationSummary> list) {
     final sorted = List<ConversationSummary>.from(list);
     sorted.sort((a, b) {
@@ -273,6 +278,7 @@ class ChatStore extends ChangeNotifier {
   Future<void> sendText(String conversationId, String text) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
+    lastSendError = null;
     final clientId = _newClientId();
     final local = Message(
       id: 'local-$clientId',
@@ -296,7 +302,8 @@ class ChatStore extends ChangeNotifier {
         text: trimmed,
       );
       _replaceLocal(conversationId, clientId, saved);
-    } catch (_) {
+    } catch (e) {
+      lastSendError = e is ApiException ? e.message : e.toString();
       _markFailed(conversationId, clientId);
     }
   }
@@ -313,6 +320,7 @@ class ChatStore extends ChangeNotifier {
     int? durationMs,
     List<int>? waveform,
   }) async {
+    lastSendError = null;
     final clientId = _newClientId();
     final local = Message(
       id: 'local-$clientId',
@@ -348,7 +356,8 @@ class ChatStore extends ChangeNotifier {
         attachmentIds: [uploaded.attachment.id],
       );
       _replaceLocal(conversationId, clientId, saved, keepLocalFile: filePath);
-    } catch (_) {
+    } catch (e) {
+      lastSendError = e is ApiException ? e.message : e.toString();
       _markFailed(conversationId, clientId);
     }
   }

@@ -43,11 +43,15 @@ dependencies:
   just_audio: ^0.10.6
   video_player: ^2.10.1
   flutter_webrtc: ^1.6.3
-  permission_handler: ^13.0.2
   path_provider: ^2.1.5
 
 dev_dependencies:
   flutter_test:
+    sdk: flutter
+
+  # 集成测试：在真机/模拟器上跑真实插件与真实网络，
+  # 用来验证「选文件 → 上传（含元数据）→ 发消息 → 气泡渲染」整条链路。
+  integration_test:
     sdk: flutter
 
   # The "flutter_lints" package below contains a set of recommended lints to

@@ -3,12 +3,16 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
 
-    <!-- 语音消息与语音通话 -->
+    <!-- 语音消息与语音通话：record / flutter_webrtc 会自行申请运行时权限 -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
 
-    <!-- 拍照 / 录像 -->
-    <uses-permission android:name="android.permission.CAMERA"/>
+    <!--
+      注意：这里**不**声明 CAMERA。
+      拍照走系统 ACTION_IMAGE_CAPTURE 意图，不声明 CAMERA 时系统会直接拉起相机；
+      一旦声明，Android 会要求先拿到运行时授权，否则抛 SecurityException。
+      我们不直接用 CameraX，所以不声明是正确做法。
+    -->
 
     <!-- WebRTC 音频路由（部分 ROM 需要） -->
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>

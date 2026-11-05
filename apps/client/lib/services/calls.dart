@@ -370,7 +370,14 @@ class CallController extends ChangeNotifier {
     };
 
     pc.onConnectionState = (state) {
-      iceState = state.name;
+      // 归一化成小写语义值：UI 只做判断，不显示原始枚举名
+      iceState = switch (state) {
+        rtc.RTCPeerConnectionState.RTCPeerConnectionStateConnected => 'connected',
+        rtc.RTCPeerConnectionState.RTCPeerConnectionStateConnecting => 'connecting',
+        rtc.RTCPeerConnectionState.RTCPeerConnectionStateDisconnected => 'disconnected',
+        rtc.RTCPeerConnectionState.RTCPeerConnectionStateFailed => 'failed',
+        _ => 'new',
+      };
       if (state == rtc.RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
         if (phase != CallPhase.active) {
           phase = CallPhase.active;

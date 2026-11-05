@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/api.dart';
+import '../../core/capabilities.dart';
 import '../../core/config.dart';
 import '../../core/models.dart';
 import '../../services/calls.dart';
@@ -288,6 +289,10 @@ class _ChatPageState extends State<ChatPage> {
 
   Future<void> _startRecord() async {
     if (_recording) return;
+    if (!Capabilities.canVoiceMessage) {
+      showError(context, Capabilities.unsupportedReason('语音消息'));
+      return;
+    }
     final ok = await _media.startRecording();
     if (!ok) {
       if (mounted) showError(context, '麦克风权限被拒绝，请在系统设置中开启');
@@ -428,6 +433,10 @@ class _ChatPageState extends State<ChatPage> {
   Future<void> _toggleAudio(Message message) async {
     final att = message.firstAttachment;
     if (att == null) return;
+    if (!Capabilities.canPlayAudio) {
+      showError(context, Capabilities.unsupportedReason('语音播放'));
+      return;
+    }
     if (_playingMessageId == message.id) {
       await _media.stopAudio();
       if (mounted) setState(() => _playingMessageId = null);
@@ -443,6 +452,10 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Future<void> _startCall() async {
+    if (!Capabilities.canVoiceCall) {
+      showError(context, Capabilities.unsupportedReason('语音通话'));
+      return;
+    }
     if (_peerId == null) {
       showError(context, '群聊通话暂未开放');
       return;
@@ -504,11 +517,13 @@ class _ChatPageState extends State<ChatPage> {
               ],
             ),
             actions: [
-              IconButton(
-                tooltip: '语音通话',
-                onPressed: _startCall,
-                icon: const Icon(Icons.phone_outlined, size: 22),
-              ),
+              // 鸿蒙暂无 WebRTC 适配，直接隐藏入口，避免点了没反应
+              if (Capabilities.canVoiceCall)
+                IconButton(
+                  tooltip: '语音通话',
+                  onPressed: _startCall,
+                  icon: const Icon(Icons.phone_outlined, size: 22),
+                ),
               const SizedBox(width: 4),
             ],
           ),
@@ -679,9 +694,14 @@ class _ChatPageState extends State<ChatPage> {
                 )
               else if (_input.text.trim().isEmpty)
                 IconButton(
-                  onPressed: () => setState(() => _voiceMode = true),
-                  icon: const Icon(Icons.mic_none, size: 24),
-                  color: c.textMuted,
+                  onPressed: Capabilities.canVoiceMessage
+                      ? () => setState(() => _voiceMode = true)
+                      : () => showError(context, Capabilities.unsupportedReason('语音消息')),
+                  icon: Icon(
+                    Capabilities.canVoiceMessage ? Icons.mic_none : Icons.mic_off_outlined,
+                    size: 24,
+                  ),
+                  color: Capabilities.canVoiceMessage ? c.textMuted : c.textFaint,
                   tooltip: '语音消息',
                 )
               else

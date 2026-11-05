@@ -96,8 +96,11 @@ class _CallPageState extends State<CallPage> {
       case CallPhase.connecting:
         return '正在连接…';
       case CallPhase.active:
-        return '${formatDuration(_call.elapsedSeconds)} · 已接通'
-            '${_call.iceState != null ? '（${_call.iceState}）' : ''}';
+        // 不要把 RTCPeerConnectionState 这类内部枚举暴露给用户，
+        // 只在真的没连上时给出人能看懂的状态。
+        final connected = _call.iceState == 'connected';
+        final suffix = connected ? '' : '（网络重连中…）';
+        return '${formatDuration(_call.elapsedSeconds)} · 已接通$suffix';
       case CallPhase.ended:
         return '通话已结束';
       case CallPhase.idle:

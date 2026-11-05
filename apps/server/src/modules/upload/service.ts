@@ -30,7 +30,7 @@ import { extname, join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { Transform } from 'node:stream';
 import type { MultipartFile } from '@fastify/multipart';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { db } from '../../db/index.js';
 import { attachments } from '../../db/schema.js';
 import { config } from '../../config.js';
@@ -175,10 +175,24 @@ export async function saveUpload(params: {
   const finalPath = join(config.upload.dir, relPath);
 
   // ---------- 去重：同内容已存在则复用，不重复占盘 ----------
+  //
+  // 【关键】只复用「本人上传 且 尚未绑定消息」的附件行：
+  //   · 按 uploaderId 限定：否则 A 的文件会被 B 拿到，
+  //     发送时报「不能引用他人的附件」（也会泄露存在性）；
+  //   · 按 messageId IS NULL 限定：否则同一张图第二次发送会命中
+  //     已绑定行，报「附件已被使用」——用户重发同一张照片直接失败。
+  // 物理文件仍按 sha256 只存一份（下面已有文件就不重复写盘），
+  // 所以存储仍然去重，只是「附件行」可以多条、各自绑定不同消息。
   const existingRows = await db
     .select()
     .from(attachments)
-    .where(eq(attachments.sha256, sha256))
+    .where(
+      and(
+        eq(attachments.sha256, sha256),
+        eq(attachments.uploaderId, uploaderId),
+        isNull(attachments.messageId),
+      ),
+    )
     .limit(1);
 
   const existing = existingRows[0];
@@ -189,15 +203,25 @@ export async function saveUpload(params: {
     return { attachment: toAttachmentDto(existing), deduplicated: true };
   }
 
-  // ---------- 原子落盘 ----------
+  // ---------- 原子落盘（同内容文件已存在时不再重写） ----------
   await mkdir(join(config.upload.dir, relPath, '..'), { recursive: true });
-  await rename(tmpPath, finalPath);
+  const alreadyOnDisk = await stat(finalPath).then(
+    (s) => s.size > 0,
+    () => false,
+  );
+  if (alreadyOnDisk) {
+    // 别人传过同一份文件（或本人已发送过）：文件已在内容寻址路径上，
+    // 本次临时文件直接丢弃，下面只新建一条附件记录。
+    await unlink(tmpPath).catch(() => undefined);
+  } else {
+    await rename(tmpPath, finalPath);
 
-  // 校验落盘大小，防止磁盘写满导致的静默截断
-  const written = await stat(finalPath);
-  if (written.size !== size) {
-    await unlink(finalPath).catch(() => undefined);
-    throw new AppError(ErrorCode.UPLOAD_INCOMPLETE, '文件写入不完整，请重试');
+    // 校验落盘大小，防止磁盘写满导致的静默截断
+    const written = await stat(finalPath);
+    if (written.size !== size) {
+      await unlink(finalPath).catch(() => undefined);
+      throw new AppError(ErrorCode.UPLOAD_INCOMPLETE, '文件写入不完整，请重试');
+    }
   }
 
   // ---------- 入库 ----------

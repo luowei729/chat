@@ -21,8 +21,8 @@ android {
         applicationId = "pub.lkz.chat"
         minSdk = 24
         targetSdk = 34
-        versionCode = 250
-        versionName = "2.5.0"
+        versionCode = 252
+        versionName = "2.5.2"
 
         // 只保留中文与英文资源，减小包体积
         resourceConfigurations += listOf("zh", "en")
@@ -91,9 +91,10 @@ android {
             }
         }
         debug {
-            // 去掉后缀：避免与 release 包同时安装时冲突
-            // 如果需要在同一台设备同时装两个包，可把下面一行改回 ".debug"
-            applicationIdSuffix = ""
+            // 默认去掉后缀：避免与 release 包同时安装时冲突。
+            // 双账号联调时加 -PdualApp，产出 pub.lkz.chat.b，
+            // 可在同一台设备同时登录两个账号（AI 自动化验证用）。
+            applicationIdSuffix = if (project.hasProperty("dualApp")) ".b" else ""
             isMinifyEnabled = false
         }
     }

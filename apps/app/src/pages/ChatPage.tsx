@@ -68,6 +68,16 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
   const { messages, hasMore, loading } = useMessages(conversationId);
 
   /**
+   * 首屏加载标志
+   * ------------------------------------------------------------
+   * 进页时先要 await 会话详情（拿标题/成员），这期间 store 里可能只有
+   * 实时推送进来的 1 条消息，列表顶部就会误显示「没有更多了」，
+   * 用户以为历史全丢了（实际后台正在拉）。
+   * 用本地标志把这段窗口也当加载中，提示才不会说反。
+   */
+  const [bootLoading, setBootLoading] = useState(true);
+
+  /**
    * 已读水位
    * ------------------------------------------------------------
    * reads 是「成员 → 已读到的 seq」映射；
@@ -192,6 +202,10 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recordTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastTypingSent = useRef(0);
+  /** 正在发起通话：防重复点击，也用于回执超时判定 */
+  const callStartingRef = useRef(false);
+  /** 发起通话失败的提示（服务端业务错误/超时） */
+  const [callError, setCallError] = useState<string | null>(null);
   const myId = currentUserId();
 
   /* ---------------- 进入会话：初始化 ---------------- */
@@ -199,6 +213,8 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
     let cancelled = false;
 
     void (async () => {
+      // 每次切会话重新进入首屏加载态（否则上一会话的 true 会一直提着）
+      setBootLoading(true);
       // 订阅本会话（只收本会话的推送，减少无关流量）
       ws.subscribe([conversationId]);
       clearUnread(conversationId);
@@ -270,7 +286,16 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
             .catch(() => undefined);
         }
       } catch {
-        if (!cancelled) setMessages(conversationId, [], false);
+        /**
+         * 拉历史失败：只结束加载态，不清空已有消息
+         * ------------------------------------------------------------
+         * 之前这里写 setMessages([]) —— 一弱网就把用户当前看到的
+         * 本地消息全抑掉，变成空会话，比不刷新更糟。
+         * 保留旧数据 + 结束 loading，用户可以下拉/点击重试。
+         */
+        if (!cancelled) setMessagesLoading(conversationId, false);
+      } finally {
+        if (!cancelled) setBootLoading(false);
       }
     })();
 
@@ -736,16 +761,63 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
   };
 
   /* ---------------- 发起语音通话 ---------------- */
+  /**
+   * 发起语音通话
+   * ------------------------------------------------------------
+   * 【不能自己造 callId】
+   * 之前这里用 `call-${Date.now()}` 本地生成一个 id 就进通话页。
+   * 服务端实际分配的是另一个 id，于是：
+   *   · call.state（对方接听/挂断）因 id 不匹配被 CallPage 丢弃
+   *   · call.p2p（SDP/ICE）同样全丢 → 永远建不起连接
+   * 表现就是「拨出去一直正在呼叫，对方接了也没声音/不计时」，
+   * 而对方（用真实 id）看起来一切正常。
+   *
+   * 正确流程：发 invite → 等 server 回 call.state(ringing,
+   * conversationId, callId) → 用真实 id 进通话页。
+   */
   const startCall = () => {
-    const callId = `call-${Date.now().toString(36)}`;
+    if (callStartingRef.current) return;
+    callStartingRef.current = true;
+    setCallError(null);
     ws.inviteCall({ conversationId, mode: 'audio' });
 
-    // 进入通话页等待对方接听
-    import('../router.js').then(({ push }) => {
+    const cleanup = () => {
+      clearTimeout(timer);
+      offState();
+      offError();
+    };
+
+    // 8 秒拿不到回执就视为失败（服务端拒绝/连接不可用）
+    const timer = setTimeout(() => {
+      cleanup();
+      callStartingRef.current = false;
+      setCallError('无法发起通话：连接超时，请检查网络后重试');
+    }, 8000);
+
+    const offState = ws.on('call.state', (msg) => {
+      if (msg.status !== 'ringing') return;
+      if (msg.conversationId !== conversationId) return;
+      if (!myId || !msg.participantIds?.includes(myId)) return;
+      cleanup();
+      callStartingRef.current = false;
       push({
         name: 'call',
-        params: { callId, conversationId, mode: 'audio', incoming: false, callerName: title },
+        params: {
+          callId: msg.callId,
+          conversationId,
+          mode: 'audio',
+          incoming: false,
+          callerName: title,
+        },
       });
+    });
+
+    const offError = ws.on('error', (msg) => {
+      // 发起阶段的错误（忙碌/无成员/状态非法）必须提示，
+      // 否则用户只看到一片没反应
+      cleanup();
+      callStartingRef.current = false;
+      setCallError(msg.message || '发起通话失败');
     });
   };
 
@@ -872,6 +944,26 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
         </view>
       </view>
 
+      {/* 发起通话失败提示（可点击关闭） */}
+      {callError ? (
+        <view
+          style={{
+            width: '100%',
+            flexShrink: 0,
+            paddingLeft: spacing.md,
+            paddingRight: spacing.md,
+            paddingTop: spacing.sm,
+            paddingBottom: spacing.sm,
+            backgroundColor: colors.primarySoft,
+            borderBottomWidth: '1px',
+            borderBottomColor: colors.border,
+          }}
+          bindtap={() => setCallError(null)}
+        >
+          <text style={{ color: colors.danger, fontSize: fontSize.sm }}>{callError}</text>
+        </view>
+      ) : null}
+
       {/* 顶部提示：对方还不在通讯录（Telegram 式，不阻断聊天） */}
       {showAddContact && peerId ? (
         <view
@@ -962,7 +1054,7 @@ export function ChatPage(props: { conversationId: string; title?: string }) {
           bindtap={showEarlier}
         >
           <text style={{ color: colors.textFaint, fontSize: fontSize.xs }}>
-            {loading
+            {loading || bootLoading
               ? '加载中…'
               : displayed.length < messages.length || hasMore
                 ? '查看更早的消息'

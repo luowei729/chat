@@ -36,7 +36,9 @@ import pub.lkz.chat.R
 class CallService : Service() {
 
     companion object {
-        private const val CHANNEL_ID = "chat_call"
+        // v2：旧渠道一旦建过，改代码里的 importance 不会生效，
+        // 必须换一个渠道 ID，新的低优先级设置才会被系统采纳。
+        private const val CHANNEL_ID = "chat_call_v2"
         private const val NOTIFICATION_ID = 2001
 
         /**
@@ -86,15 +88,28 @@ class CallService : Service() {
         // 必须在 5 秒内调用 startForeground，否则系统抛 ANR
         val notification = buildNotification()
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            // API 30+：可以声明服务类型，Android 14 起必须
-            startForeground(NOTIFICATION_ID, notification, TYPE_MICROPHONE)
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            // API 29：三参数重载存在，但麦克风类型常量还没有，
-            // 传 0 表示不限定类型（系统按清单声明处理）
-            startForeground(NOTIFICATION_ID, notification, 0)
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
+        /**
+         * 必须捕获 SecurityException / ForegroundServiceStartNotAllowedException
+         * ------------------------------------------------------------
+         * Android 14 在「从后台启动麦克风 FGS」时会直接抛异常，
+         * 而且异常发生在主线程的 onStartCommand 里 —— 不处理就是
+         * 整个 App 崩溃（实测：一来电就弹出「Chat keeps stopping」）。
+         * 失败时只停服务，通话逻辑继续走（最差情况退化为无保活）。
+         */
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                // API 30+：可以声明服务类型，Android 14 起必须
+                startForeground(NOTIFICATION_ID, notification, TYPE_MICROPHONE)
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                // API 29：三参数重载存在，但麦克风类型常量还没有，
+                // 传 0 表示不限定类型（系统按清单声明处理）
+                startForeground(NOTIFICATION_ID, notification, 0)
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+        } catch (_: Throwable) {
+            // 无权限/后台限制：放弃前台服务，不让崩溃影响通话界面
+            stopSelf()
         }
 
         // 被系统杀掉后不自动重启：通话已中断，重启也无意义
@@ -108,12 +123,18 @@ class CallService : Service() {
         val channel = NotificationChannel(
             CHANNEL_ID,
             "语音通话",
-            // HIGH：通话通知必须能响铃与弹窗
-            NotificationManager.IMPORTANCE_HIGH,
+            /**
+             * LOW：这是「通话进行中」的常驻通知，不是来电提醒。
+             * 用 HIGH 会以悬浮横幅盖住应用内的通话页顶部（实测），
+             * 正在看通话界面时突然弹一条「后台通话中」非常突兀。
+             * 来电提醒后续单独做高优先级通道，不与常驻通知共用。
+             */
+            NotificationManager.IMPORTANCE_LOW,
         ).apply {
             description = "通话进行中的常驻通知"
             setShowBadge(false)
             enableVibration(false)
+            setSound(null, null)
         }
 
         val manager = getSystemService(NotificationManager::class.java)

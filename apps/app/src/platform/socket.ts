@@ -89,11 +89,24 @@ function ensureSubscribed(): void {
             typeof payload['reason'] === 'string' ? payload['reason'] : '',
           );
           break;
-        case 'failure':
-          h.onError(
-            typeof payload['message'] === 'string' ? payload['message'] : '连接失败',
-          );
+        case 'failure': {
+          /**
+           * 失败必须同时当作关闭事件处理！
+           * ------------------------------------------------------------
+           * 之前只调 onError，而 ws.ts 的 onError 是空实现，
+           * 结果 JS 的连接状态永远停在 ready：
+           *   · 心跳照发（原生返回 sent:false，但没人看）
+           *   · 新消息/通话邀请会被原生静默丢弃
+           *   · 永远不会重连
+           * 现象就是「消息不再推送、打电话对方没反应」，
+           * 实际只是底层 socket 悄悄断了。
+           */
+          const reason =
+            typeof payload['message'] === 'string' ? payload['message'] : '连接失败';
+          h.onError(reason);
+          h.onClose(1006, reason);
           break;
+        }
         default:
           break;
       }
@@ -129,9 +142,10 @@ export function openSocket(
       (raw) => {
         const r = (raw ?? {}) as Record<string, unknown>;
         if (r['ok'] !== true) {
-          handlers.onError(
-            typeof r['message'] === 'string' ? r['message'] : '连接失败',
-          );
+          const reason = typeof r['message'] === 'string' ? r['message'] : '连接失败';
+          handlers.onError(reason);
+          // 初始化失败同样要通知上层，否则状态会卡在 connecting
+          handlers.onClose(1006, reason);
         }
         // 成功时不要手动触发 onOpen —— 等原生的 'open' 事件，
         // 否则会在真正握手上完成前就发 auth 帧。

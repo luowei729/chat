@@ -89,9 +89,20 @@ export function App() {
         ws.connect();
         reset({ name: 'conversations' });
       } catch {
-        // access 过期且刷新失败 → 回登录页
-        clearTokens();
-        reset({ name: 'login' });
+        /**
+         * 区分「登录态失效」与「网络暂时不通」
+         * ------------------------------------------------
+         * 之前任何异常都 clearTokens()，弱网下冷启动会直接
+         * 被踢回登录页，用户以为「退出 App 就掉登录」。
+         * 令牌被服务端明确拒绝时，request() 已经清空；
+         * 这里只要令牌还在，就保留登录态，提示重试即可。
+         */
+        if (!getRefreshToken()) {
+          clearTokens();
+          reset({ name: 'login' });
+        } else {
+          setBootError('网络连接失败，请检查网络后重试');
+        }
       } finally {
         setBootstrapped();
       }

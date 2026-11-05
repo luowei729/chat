@@ -24,7 +24,7 @@
 
 import { CALL_MESH_MAX_PARTICIPANTS, ErrorCode, type CallMode, type CallSessionInfo, type CallStatus } from '@chat/shared';
 import { EventEmitter } from 'node:events';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { db } from '../../db/index.js';
 import { callParticipants, callSessions, users } from '../../db/schema.js';
 import { config } from '../../config.js';
@@ -72,6 +72,14 @@ interface CallState {
   status: CallStatus;
   initiatorId: string;
   participants: Map<string, ParticipantState>;
+  /**
+   * 参与者昵称缓存：userId → 昵称
+   * ------------------------------------------------------------
+   * 只发 userId 时，客户端只能显示 id 尾号（如 MDH2），
+   * 通话界面认不出是谁。发起时一次性查好，后续广播直接带出去，
+   * 避免每次状态变更都回查数据库（2C 机器扛不住）。
+   */
+  names: Map<string, string>;
   createdAt: number;
   /** 振铃超时定时器 */
   ringTimer: NodeJS.Timeout | null;
@@ -79,12 +87,96 @@ interface CallState {
   caller: { id: string; nickname: string; avatarUrl: string | null };
   conversationTitle: string;
   expiresAt: number;
+  /** 最后活跃时间（客户端心跳刷新），无心跳的已接通通话会被回收 */
+  lastSeenAt: number;
 }
 
 /** 进行中的通话：callId → 状态 */
 const activeCalls = new Map<string, CallState>();
 /** 用户当前所在通话：userId → callId，用于忙线检测 */
 const userCallIndex = new Map<string, string>();
+
+/* ------------------------------------------------------------------ */
+/* 残留通话清理                                                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 在线检查钩子
+ * ------------------------------------------------------------
+ * service 不能反向 import gateway（会循环依赖），
+ * 由网关启动时注入。默认 true：没注入时保守认为在线，避免误杀。
+ */
+let isUserOnline: (userId: string) => boolean = () => true;
+
+/** 通话参与者是否已经全员离线（= 这通电话不可能还活着） */
+function isAbandoned(call: CallState): boolean {
+  for (const uid of call.participants.keys()) {
+    if (isUserOnline(uid)) return false;
+  }
+  return true;
+}
+
+/**
+ * 回收某个用户身上残留的死通话
+ * 在发起新通话前调用：如果旧通话全员离线，直接结束掉，
+ * 否则用户会永远被「你已在通话中」拦住。
+ */
+async function releaseAbandoned(userId: string): Promise<void> {
+  const id = userCallIndex.get(userId);
+  if (!id) return;
+  const call = activeCalls.get(id);
+  if (!call) {
+    userCallIndex.delete(userId);
+    return;
+  }
+  if (!isAbandoned(call)) return;
+
+  log.info({ callId: id, userId }, '清理无人在线的残留通话');
+  try {
+    await finalize(call, 'ended', 'error');
+  } catch {
+    // 清理失败不影响新通话
+  }
+}
+
+let reaper: ReturnType<typeof setInterval> | null = null;
+
+/** 启动后台回收器（幂等） */
+function startReaper(): void {
+  if (reaper) return;
+  reaper = setInterval(() => {
+    const now = Date.now();
+    for (const call of [...activeCalls.values()]) {
+      // 已接通但 90 秒没有任何客户端信令：App 已退出/崩溃，回收
+      if (call.status === 'active' && now - call.lastSeenAt > 90_000) {
+        log.info({ callId: call.id, idleMs: now - call.lastSeenAt }, '回收无心跳的通话');
+        void finalize(call, 'ended', 'error').catch(() => undefined);
+        continue;
+      }
+
+      // 至少存活 1 分钟再考虑按在线状态回收，避免接通过程中被误判
+      if (now - call.createdAt < 60_000) continue;
+      if (!isAbandoned(call)) continue;
+      log.info({ callId: call.id }, '回收无人在线的残留通话');
+      void finalize(call, 'ended', 'error').catch(() => undefined);
+    }
+  }, 30_000);
+  reaper.unref?.();
+}
+
+/** 刷新通话的「最后活跃时间」（任何客户端信令都算） */
+export function touch(callId: string, userId: string): void {
+  const call = activeCalls.get(callId);
+  if (!call) return;
+  if (!call.participants.has(userId)) return;
+  call.lastSeenAt = Date.now();
+}
+
+/** 注入在线检查器（WS 网关启动时调用） */
+export function setOnlineChecker(fn: (userId: string) => boolean): void {
+  isUserOnline = fn;
+  startReaper();
+}
 
 /* ------------------------------------------------------------------ */
 /* 内部工具                                                             */
@@ -108,6 +200,16 @@ function joinedUserIds(call: CallState): string[] {
 /** 取全部被邀请者（含未接听） */
 function allUserIds(call: CallState): string[] {
   return [...call.participants.keys()];
+}
+
+/**
+ * 取参与者昵称表（供 WS 广播携带）
+ * 返回普通对象而不是 Map：WS 帧统一用 JSON，Map 序列化会变 {}。
+ */
+export function participantNamesOf(callId: string): Record<string, string> {
+  const call = activeCalls.get(callId);
+  if (!call) return {};
+  return Object.fromEntries(call.names);
 }
 
 /** 清理通话：移出索引、停定时器 */
@@ -154,7 +256,8 @@ export async function invite(params: {
   // 必须是会话成员
   await requireMember(conversationId, initiatorId);
 
-  // 发起者自己不能已在通话中
+  // 发起者自己不能已在通话中（先回收全员离线的残留通话）
+  await releaseAbandoned(initiatorId);
   const existingCallId = userCallIndex.get(initiatorId);
   if (existingCallId) {
     throw new AppError(ErrorCode.CALL_STATE_INVALID, '你已在通话中');
@@ -194,6 +297,8 @@ export async function invite(params: {
   const busy: string[] = [];
 
   for (const uid of targets) {
+    // 被邀请者的旧通话若已全员离线，先回收，避免误判忙线
+    await releaseAbandoned(uid);
     if (userCallIndex.has(uid)) {
       busy.push(uid);
       participants.set(uid, {
@@ -231,6 +336,21 @@ export async function invite(params: {
     .where(eq(users.id, initiatorId))
     .limit(1);
 
+  /**
+   * 参与者昵称：一次 IN 查询全部取回
+   * 发起时就固定下来，接通/挂断广播复用，避免重复查库。
+   */
+  const nameRows = await db
+    .select({ id: users.id, nickname: users.nickname })
+    .from(users)
+    .where(inArray(users.id, [initiatorId, ...targets]));
+  const names = new Map<string, string>();
+  for (const row of nameRows) names.set(row.id, row.nickname);
+  // 兜底：查不到的（理论上不会发生）用「用户」占位，避免前端显示 id 尾号
+  for (const uid of [initiatorId, ...targets]) {
+    if (!names.has(uid)) names.set(uid, '用户');
+  }
+
   const call: CallState = {
     id: callId,
     conversationId,
@@ -238,11 +358,13 @@ export async function invite(params: {
     status: 'ringing',
     initiatorId,
     participants,
+    names,
     createdAt: now,
     ringTimer: null,
     caller: callerInfo,
     conversationTitle: convTitleRows[0]?.title ?? '通话',
     expiresAt: now + config.call.ringTimeoutMs,
+    lastSeenAt: now,
   };
 
   activeCalls.set(callId, call);
@@ -421,8 +543,9 @@ export async function hangup(callId: string, userId: string): Promise<{ call: Ca
     return { call, shouldEnd: true };
   }
 
-  // 没人了则结束
-  if (remaining.length === 0) {
+  // 没人了则结束；已接通后只剩 1 人也没有通话意义，直接结束
+  // （否则对方会停在「1 人通话中」，计时继续，以为没挂断）
+  if (remaining.length === 0 || (call.status === 'active' && remaining.length <= 1)) {
     await finalize(call, 'ended', 'hangup');
     return { call, shouldEnd: true };
   }

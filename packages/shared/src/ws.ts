@@ -300,9 +300,22 @@ export interface WsCallIncomingMessage {
 export interface WsCallStateMessage {
   type: 'call.state';
   callId: string;
+  /**
+   * 会话 id（发起回执必带）
+   * 主叫先用本地临时 id 垫位，收到该回执后才知道真正的 callId。
+   */
+  conversationId?: string;
   status: CallStatus;
   /** 当前参与者列表 */
   participantIds: string[];
+  /**
+   * 参与者昵称表：userId → 昵称
+   * ------------------------------------------------------------
+   * 只靠 participantIds 时客户端只能显示 id 尾号，
+   * 通话界面会出现“MDH2”这种看不懂的名字。
+   * 服务端发起通话时一次查好，后续广播直接带出。
+   */
+  participantNames?: Record<string, string>;
   /** 新加入的成员，客户端据此主动向其发起 offer（Mesh 拓扑维护） */
   joinedUserId?: string;
   /** 离开的成员，客户端应关闭对应 PeerConnection */

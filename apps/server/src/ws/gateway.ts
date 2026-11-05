@@ -108,6 +108,13 @@ export function isOnline(userId: string): boolean {
   return false;
 }
 
+/**
+ * 把在线判断注入通话服务
+ * 注意：必须在 wsPlugin() 运行时注册，不能放在模块顶层。
+ * 顶层执行时 callService 的导出可能还没初始化（esbuild 打包后
+ * 会变成 (void 0)(isOnline) 直接启动崩溃，已实测）。
+ */
+
 /** 当前在线连接总数（健康检查用） */
 export function onlineClientCount(): number {
   let n = 0;
@@ -320,11 +327,15 @@ async function handleClientMessage(client: WsClient, msg: WsClientMessage): Prom
         log.info({ callId: result.call.id, delivered, offline: offline.length }, '来电已推送');
 
         // 给发起者回执：知道谁收到了
+        // conversationId 必带：主叫靠它把「本地临时 id」换成真正的 callId，
+        // 否则后续 call.state / call.p2p 会因 id 不匹配被全部丢弃。
         send(client, {
           type: 'call.state',
           callId: result.call.id,
+          conversationId: msg.conversationId,
           status: 'ringing',
           participantIds: [userId],
+          participantNames: callService.participantNamesOf(result.call.id),
         });
       } catch (e) {
         const code = e instanceof AppError ? e.code : ErrorCode.INTERNAL_ERROR;
@@ -348,6 +359,7 @@ async function handleClientMessage(client: WsClient, msg: WsClientMessage): Prom
           participantIds: [...result.call.participants.values()]
             .filter((p) => p.state === 'joined')
             .map((p) => p.userId),
+          participantNames: callService.participantNamesOf(msg.callId),
           joinedUserId: userId,
         });
       } catch (e) {
@@ -370,6 +382,7 @@ async function handleClientMessage(client: WsClient, msg: WsClientMessage): Prom
           participantIds: [...result.call.participants.values()]
             .filter((p) => p.state === 'joined')
             .map((p) => p.userId),
+          participantNames: callService.participantNamesOf(msg.callId),
           leftUserId: userId,
           reason: 'reject',
         });
@@ -392,6 +405,7 @@ async function handleClientMessage(client: WsClient, msg: WsClientMessage): Prom
           participantIds: [...result.call.participants.values()]
             .filter((p) => p.state === 'joined')
             .map((p) => p.userId),
+          participantNames: callService.participantNamesOf(msg.callId),
           leftUserId: userId,
           reason: 'hangup',
         });
@@ -403,6 +417,7 @@ async function handleClientMessage(client: WsClient, msg: WsClientMessage): Prom
 
     /* ---------------- P2P 信令转发（核心） ---------------- */
     case 'call.p2p': {
+      callService.touch(msg.callId, userId);
       const call = callService.getCallState(msg.callId);
       if (!call) {
         send(client, { type: 'error', code: ErrorCode.CALL_NOT_FOUND, message: '通话已结束' });
@@ -437,6 +452,8 @@ async function handleClientMessage(client: WsClient, msg: WsClientMessage): Prom
     /* ---------------- 静音/说话状态 ---------------- */
     case 'call.media-state': {
       try {
+        // 兼作通话心跳：通话中客户端每 20 秒上报一次
+        callService.touch(msg.callId, userId);
         const call = callService.updateMediaState(msg.callId, userId, {
           muted: msg.muted,
           speaking: msg.speaking,
@@ -470,6 +487,9 @@ async function handleClientMessage(client: WsClient, msg: WsClientMessage): Prom
 /* ------------------------------------------------------------------ */
 
 export default async function wsPlugin(app: FastifyInstance): Promise<void> {
+  // 注入在线检查器：用于回收「全员离线」的残留通话
+  callService.setOnlineChecker(isOnline);
+
   /**
    * 振铃超时广播
    * ------------------------------------------------------------

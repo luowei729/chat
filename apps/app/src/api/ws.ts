@@ -17,7 +17,7 @@
 import type { WsClientMessage, WsServerMessage } from '@chat/shared';
 import { WS_HEARTBEAT_INTERVAL_MS } from '@chat/shared';
 import { PLATFORM, WS_URL } from '../config.js';
-import { getAccessToken, getDeviceId } from './client.js';
+import { getAccessToken, getDeviceId, refreshAccessToken } from './client.js';
 import { openSocket } from '../platform/socket.js';
 
 /* ------------------------------------------------------------------ */
@@ -189,6 +189,33 @@ export function connect(): void {
   manualClose = false;
   setState('connecting');
 
+  /**
+   * 连接看门狗
+   * ------------------------------------------------------------
+   * 原生 OkHttp 通道在切网 / 进程被冻结时，可能既不回调 onOpen
+   * 也不回调 onClose，state 就永远停在 connecting，之后所有
+   * connect() 都被短路 —— 表现为「再也没有实时消息和来电」，
+   * 只能杀进程重启。超过 12 秒未就绪则强制丢弃重连。
+   */
+  let settled = false;
+  const settle = (): void => {
+    settled = true;
+    clearTimeout(watchdog);
+  };
+  const watchdog = setTimeout(() => {
+    if (settled) return;
+    if (state !== 'connecting' && state !== 'authenticating') return;
+    settle();
+    try {
+      socket?.close();
+    } catch {
+      // 忽略
+    }
+    socket = null;
+    setState('closed');
+    scheduleReconnect();
+  }, 12_000);
+
   socket = openSocket(WS_URL, {}, {
     onOpen: () => {
       // 连接建立后先鉴权
@@ -213,6 +240,7 @@ export function connect(): void {
 
       // 鉴权成功：切到 ready，启动心跳，补发队列与订阅
       if (msg.type === 'ready') {
+        settle();
         setState('ready');
         reconnectAttempts = 0;
         startHeartbeat();
@@ -237,14 +265,28 @@ export function connect(): void {
     },
 
     onClose: (code: number) => {
+      settle();
       stopHeartbeat();
       setState('closed');
       socket = null;
 
       if (manualClose) return;
 
-      // 鉴权失败（4001/4002）不重连，交给上层跳登录页
+      /**
+       * 鉴权失败（4001/4002）
+       * ------------------------------------------------------------
+       * access token 只有 15 分钟，App 在后台放一会儿再回前台
+       * 就是这种失败。之前直接 return，WS 永远不会重连：
+       * 消息不推送、来电收不到，直到杀死 App 重启。
+       * 现在先刷新令牌，成功则退避重连。
+       */
       if (code === 4001 || code === 4002) {
+        void (async () => {
+          const outcome = await refreshAccessToken();
+          if (outcome === 'ok') scheduleReconnect();
+          // invalid：登录态已被清空，上层会跳登录页
+          // transient：保留登录态，等下次页面恢复/网络事件再连
+        })();
         return;
       }
 

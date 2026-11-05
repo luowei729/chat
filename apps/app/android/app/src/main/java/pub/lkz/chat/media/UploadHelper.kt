@@ -60,17 +60,29 @@ object UploadHelper {
                 ?: return Result.failure(IllegalStateException("无法读取文件：$uri"))
 
             val builder = MultipartBody.Builder().setType(MultipartBody.FORM)
-            builder.addFormDataPart(
-                "file",
-                name,
-                ProgressRequestBody(body, onProgress),
-            )
 
+            /**
+             * 元数据字段必须放在文件之前
+             * ------------------------------------------------------------
+             * 服务端用 Fastify 的 req.file() 取文件，它只把「文件之前」
+             * 出现的表单字段放进 file.fields。之前 file 写在最前面，
+             * 导致 kind / width / height / durationMs / waveform 全部丢失：
+             *   · 视频气泡时长永远显示 0:00
+             *   · 图片宽高为空，气泡按默认比例显示
+             *   · 语音波形没有，只剩一根直线
+             * 调整顺序即可，服务端零改动。
+             */
             opts.optJSONObject("fields")?.let { fields ->
                 for (key in fields.keys()) {
                     builder.addFormDataPart(key, fields.optString(key, ""))
                 }
             }
+
+            builder.addFormDataPart(
+                "file",
+                name,
+                ProgressRequestBody(body, onProgress),
+            )
 
             val reqBuilder = Request.Builder().url(url).post(builder.build())
             opts.optJSONObject("headers")?.let { headers ->

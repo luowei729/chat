@@ -32,6 +32,7 @@ import {
   startLocalAudio,
   stopCall,
   subscribeCallState,
+  updateParticipantNames,
   type CallEngineState,
 } from '../rtc/engine.js';
 import { IconCheck, IconClose, IconMic } from './Icons.js';
@@ -95,7 +96,25 @@ export function CallPage(props: {
     const offState = ws.on('call.state', (msg) => {
       if (msg.callId !== callId) return;
 
+      // 先落昵称：后面无论是哪条分支，参与者头像下方都能显示真实名字
+      updateParticipantNames(msg.participantNames);
+
       if (msg.status === 'active') {
+        /**
+         * 防御：已接通但只剩自己
+         * ------------------------------------------------------------
+         * 正常情况下对方挂断时服务端会直接广播 ended；
+         * 弱网下这一帧可能丢，导致自己停在「1 人通话中」计时。
+         * 收到 active 但参与者只有自己时，视为通话已结束。
+         */
+        if ((msg.participantIds?.length ?? 0) <= 1) {
+          setPhase('ended');
+          setCallState(false, '');
+          stopCall();
+          setTimeout(() => pop(), 1500);
+          return;
+        }
+
         setPhase('active');
 
         void (async () => {
@@ -118,6 +137,22 @@ export function CallPage(props: {
               return;
             }
           }
+
+          /**
+           * Offer 角色规则（避免 glare）
+           * ------------------------------------------------------------
+           * joinedUserId 是「这次新加入的人」：
+           *   · 我是已在通话中的人（joinedUserId ≠ 我）→ 我发 offer；
+           *   · 我就是新加入者（joinedUserId === 我）→ 只等 offer，
+           *     绝不主动发，否则双方同时 offer，互相
+           *     setRemoteDescription 失败，连接永远停在「重连中」。
+           * 之前的 bug：不管 joinedUserId 是谁，都遍历所有参与者
+           * 发 offer，两端必然对撞，通话接通了也没声音。
+           */
+          if (msg.joinedUserId && msg.joinedUserId === myId) {
+            return;
+          }
+
           const targets = new Set<string>(msg.participantIds ?? []);
           if (msg.joinedUserId && msg.joinedUserId !== myId) targets.add(msg.joinedUserId);
           for (const pid of targets) {
@@ -217,21 +252,44 @@ export function CallPage(props: {
    * 生命周期与后台能力的绑定
    * ============================================================
    * 规则：
-   *   外呼中（ringing + 非来电）→ 开启后台（用户可能边拨号边切走）
-   *   已接通（active）          → 开启后台
-   *   来电响铃（ringing + 来电）→ 不开（还没接，不该占麦克风与通知栏）
-   *   已结束（ended）           → 关闭并清理
+   *   已接通（active）→ 开启后台（前台服务 + 麦克风类型）；
+   *   已结束（ended）→ 关闭并清理。
    *
-   * 放在 effect 里而不是各处分散调用，是为了保证「任何一个
-   * 状态跳转」都会执行到对应分支，不会漏掉清理。
+   * 【振铃阶段不能启动麦克风前台服务】
+   * Android 14 要求 FGS type=microphone 必须满足全部条件：
+   *   有 FOREGROUND_SERVICE_MICROPHONE + RECORD_AUDIO，
+   *   且进程处于「允许从后台启动 FGS」的状态。
+   * 来电时 App 往往在后台，系统直接抛 SecurityException，
+   * 且异常发生在 Service.onStartCommand 主线程 → **整个 App 崩溃**，
+   * 用户看到的就是「一来电就闪退 / 完全没反应」。
+   * 只在用户点接听（App 已在前台）后启动，既合规又不会崩。
    */
   useEffect(() => {
-    if (phase === 'active' || (phase === 'ringing' && !incoming)) {
+    if (phase === 'active') {
       prepareCallBackground(callerName ?? '通话中');
     } else if (phase === 'ended') {
       setCallState(false, '');
     }
   }, [phase, incoming, callerName]);
+
+  /**
+   * 通话心跳（服务端租约）
+   * ------------------------------------------------------------
+   * 服务端靠 lastSeenAt 判定通话是否还活着：
+   * App 被杀/闪退后心跳停止，90 秒后自动回收这通电话，
+   * 否则用户会永远被「你已在通话中」拒绝新的呼叫。
+   * 复用 media-state 通道，不新增协议消息。
+   */
+  useEffect(() => {
+    if (phase !== 'active') return;
+    const beat = () => {
+      const s = getCallState();
+      ws.sendMediaState({ callId, muted: s.muted, speaking: s.speaking });
+    };
+    beat();
+    const timer = setInterval(beat, 20_000);
+    return () => clearInterval(timer);
+  }, [phase, callId]);
 
   /* ---------------- 最小化到悬浮窗 ---------------- */
   /**
@@ -280,16 +338,34 @@ export function CallPage(props: {
   const peerList = Object.values(engine.peers);
   const participantCount = peerList.length + 1;
 
+  /**
+   * 布局必须用绝对定位，不能用 justifyContent:'space-between'
+   * ------------------------------------------------------------
+   * Lynx 在 Android 上的命中测试只认布局起点的偏移：
+   * space-between / flex-end 把元素「视觉上」推到下方后，
+   * 点击坐标仍按顶部计算 → 接听/拒接按钮看得见却点不动。
+   * 症状就是「打语音电话有来电界面，但怎么点都没反应」。
+   * 之前消息列表已经踩过同一个坑，这里统一改成 absolute。
+   */
   return (
     <view
       style={{
         ...commonStyles.page,
         backgroundColor: colors.bg,
-        justifyContent: 'space-between',
+        position: 'relative',
       }}
     >
       {/* 顶部：通话对象与状态（全部居中，用 margin 代替 gap） */}
-      <view style={{ alignItems: 'center', paddingTop: '80px' }}>
+      <view
+        style={{
+          position: 'absolute',
+          left: '0px',
+          right: '0px',
+          top: '0px',
+          alignItems: 'center',
+          paddingTop: '80px',
+        }}
+      >
         <view
           style={{
             width: '96px',
@@ -338,7 +414,11 @@ export function CallPage(props: {
       {/* 中部：参与者网格（语音用头像 + 说话高亮） */}
       <view
         style={{
-          flex: 1,
+          position: 'absolute',
+          left: '0px',
+          right: '0px',
+          top: '340px',
+          bottom: '220px',
           padding: spacing.xl,
           display: 'flex',
           flexDirection: 'row',
@@ -358,7 +438,7 @@ export function CallPage(props: {
         {peerList.map((peer) => (
           <ParticipantTile
             key={peer.userId}
-            name={shortName(peer.userId)}
+            name={engine.names[peer.userId] ?? shortName(peer.userId)}
             speaking={peer.speaking}
             muted={peer.muted}
             connectionState={peer.connectionState}
@@ -366,12 +446,18 @@ export function CallPage(props: {
         ))}
       </view>
 
-      {/* 底部：操作按钮（用 margin 分隔，不用 gap） */}
+      {/* 底部：操作按钮（绝对定位，保证点击命中区与视觉一致） */}
       <view
         style={{
+          position: 'absolute',
+          left: '0px',
+          right: '0px',
+          bottom: '0px',
+          paddingTop: '16px',
           paddingBottom: '60px',
           display: 'flex',
-          flexDirection: 'row', width: '100%',
+          flexDirection: 'row',
+          width: '100%',
           justifyContent: 'center',
         }}
       >
@@ -476,7 +562,15 @@ function CircleButton(props: {
   const { label, color, action, muted = false, onTap } = props;
 
   return (
-    <view style={{ alignItems: 'center', marginLeft: spacing.lg, marginRight: spacing.lg }}>
+    <view
+      style={{
+        alignItems: 'center',
+        marginLeft: spacing.lg,
+        marginRight: spacing.lg,
+        padding: '8px',
+        position: 'relative',
+      }}
+    >
       <view
         style={{
           width: '64px',
@@ -490,7 +584,6 @@ function CircleButton(props: {
           justifyContent: 'center',
           marginBottom: spacing.sm,
         }}
-        bindtap={onTap}
       >
         <view style={{ position: 'relative', width: '22px', height: '22px' }}>
           {action === 'mute' ? <IconMic size={22} color="#FFFFFF" /> : null}
@@ -553,6 +646,22 @@ function CircleButton(props: {
         </view>
       </view>
       <text style={{ color: colors.textMuted, fontSize: fontSize.xs }}>{label}</text>
+
+      {
+        /**
+         * 透明点击层
+         * ------------------------------------------------------------
+         * 图标是绝对定位的子 view，会先吃掉落在图标上的触摸，
+         * 父级的 bindtap 不再触发 —— 用户点「接听」正中心毫无反应，
+         * 这就是「语音通话没反应」的直接原因。
+         * 在最上层盖一个等大的透明 view 承接所有点击，
+         * 同时扩大了点击区（含文字），比原按钮更好点。
+         */
+      }
+      <view
+        style={{ position: 'absolute', left: '0px', right: '0px', top: '0px', bottom: '0px' }}
+        bindtap={onTap}
+      />
     </view>
   );
 }

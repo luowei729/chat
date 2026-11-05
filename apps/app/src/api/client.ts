@@ -68,6 +68,16 @@ export function saveTokens(params: {
 
 /** 清除登录态（退出登录或刷新失败时） */
 export function clearTokens(): void {
+  /**
+   * 诊断标记：记录是谁清空了登录态。
+   * 只写不删，方便用户反馈「又掉登录」时用 adb 直接读原因。
+   */
+  try {
+    storage.setItem('chat.debug.clearAt', String(Date.now()));
+    storage.setItem('chat.debug.clearStack', (new Error().stack ?? '').slice(0, 500));
+  } catch {
+    // 诊断失败不影响主流程
+  }
   storage.removeItem(storage.StorageKey.ACCESS_TOKEN);
   storage.removeItem(storage.StorageKey.REFRESH_TOKEN);
   storage.removeItem(storage.StorageKey.ACCESS_EXPIRES_AT);
@@ -115,61 +125,97 @@ export function getDeviceId(): string {
 /* 令牌刷新（单飞模式）                                                  */
 /* ------------------------------------------------------------------ */
 
+/**
+ * 刷新结果三态，必须区分「刷新令牌真的失效」和「网络暂时不通」：
+ *   ok        → 拿到新令牌
+ *   invalid   → 服务端明确拒绝（refresh token 过期/已轮换）→ 必须重登
+ *   transient → 网络/超时/499，令牌还是好的 → 绝不能清登录态
+ *
+ * 之前这里只有 boolean，任何一次瞬时失败都会 clearTokens()，
+ * 表现就是「用着用着突然退出登录」「重启 App 掉登录」。
+ */
+export type RefreshOutcome = 'ok' | 'invalid' | 'transient';
+
 /** 正在进行的刷新请求：并发请求共享同一个 Promise，避免刷新风暴 */
-let refreshPromise: Promise<boolean> | null = null;
+let refreshPromise: Promise<RefreshOutcome> | null = null;
+
+/** 睡眠（重试退避用） */
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 /**
  * 用 refresh token 换新的 access token
- * @returns 是否刷新成功
+ * 网络类错误最多重试 3 次（300/700/1200ms），
+ * 业务层明确拒绝则立即返回 invalid，不做无意义重试。
  */
-async function doRefresh(): Promise<boolean> {
+async function doRefresh(): Promise<RefreshOutcome> {
   const refreshToken = getRefreshToken();
-  if (!refreshToken) return false;
+  if (!refreshToken) return 'invalid';
 
-  try {
-    const res = await rawFetch('/auth/refresh', {
-      method: 'POST',
-      body: {
-        refreshToken,
-        platform: PLATFORM,
-      },
-      // 刷新请求本身不需要带旧 access token
-      skipAuth: true,
-      skipRefresh: true,
-    });
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const res = await rawFetch('/auth/refresh', {
+        method: 'POST',
+        body: {
+          refreshToken,
+          platform: PLATFORM,
+        },
+        // 刷新请求本身不需要带旧 access token
+        skipAuth: true,
+        skipRefresh: true,
+      });
 
-    if (res.code !== 0) return false;
+      // 有响应但业务失败：refresh token 已失效，重试也没有意义
+      if (res.code !== 0) {
+        storage.setItem('chat.debug.refresh', `invalid:${res.code}@${Date.now()}`);
+        return 'invalid';
+      }
 
-    // 收窄类型：code === 0 时一定是 ApiOk
-    if (!('data' in res)) return false;
-    const data = res.data as {
-      accessToken: string;
-      refreshToken: string;
-      accessTokenExpiresAt: number;
-      user: { id: string };
-    };
+      // 收窄类型：code === 0 时一定是 ApiOk
+      if (!('data' in res)) return 'invalid';
+      const data = res.data as {
+        accessToken: string;
+        refreshToken: string;
+        accessTokenExpiresAt: number;
+        user: { id: string };
+      };
 
-    saveTokens({
-      accessToken: data.accessToken,
-      refreshToken: data.refreshToken,
-      accessTokenExpiresAt: data.accessTokenExpiresAt,
-    });
-    storage.setItem(storage.StorageKey.USER_ID, data.user.id);
+      saveTokens({
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken,
+        accessTokenExpiresAt: data.accessTokenExpiresAt,
+      });
+      storage.setItem(storage.StorageKey.USER_ID, data.user.id);
+      storage.setItem('chat.debug.refresh', `ok@${Date.now()}`);
 
-    return true;
-  } catch {
-    return false;
+      return 'ok';
+    } catch {
+      // rawFetch 只在传输层失败时抛错（网络/超时）
+      if (attempt < 2) await delay(300 * (attempt + 1));
+    }
   }
+
+  storage.setItem('chat.debug.refresh', `transient@${Date.now()}`);
+  return 'transient';
 }
 
 /** 单飞刷新：同一时刻只有一个刷新请求在飞 */
-async function refreshOnce(): Promise<boolean> {
+async function refreshOnce(): Promise<RefreshOutcome> {
   if (!refreshPromise) {
     refreshPromise = doRefresh().finally(() => {
       refreshPromise = null;
     });
   }
   return refreshPromise;
+}
+
+/**
+ * 供 WS 层在鉴权失败（4001/4002）时主动刷新令牌后重连。
+ * WS 不经过 request()，没有自动刷新逻辑。
+ */
+export async function refreshAccessToken(): Promise<RefreshOutcome> {
+  return refreshOnce();
 }
 
 /**
@@ -182,8 +228,10 @@ async function ensureFreshToken(): Promise<void> {
   if (!expiresAt) return;
   if (expiresAt - Date.now() > 60_000) return;
 
-  const ok = await refreshOnce();
-  if (!ok) {
+  const outcome = await refreshOnce();
+  // 只有服务端明确拒绝才清登录态；瞬时网络故障保留令牌，
+  // 后续请求仍可用旧 token，或等网络恢复后再刷新。
+  if (outcome === 'invalid') {
     clearTokens();
   }
 }
@@ -351,12 +399,14 @@ export async function request<T = unknown>(
   // 401：尝试刷新一次后重试
   if (res.code === ErrorCode.TOKEN_EXPIRED || res.code === ErrorCode.UNAUTHORIZED) {
     if (!options.skipRefresh) {
-      const ok = await refreshOnce();
-      if (ok) {
+      const outcome = await refreshOnce();
+      if (outcome === 'ok') {
         res = await rawFetchWithRetry<T>(path, options);
-      } else {
+      } else if (outcome === 'invalid') {
+        // 令牌确实失效：清登录态并回登录页
         clearTokens();
       }
+      // transient：保留登录态，错误按原样抛给 UI 提示稍后重试
     }
   }
 

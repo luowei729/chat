@@ -114,6 +114,13 @@ export interface CallEngineState {
   localStream: MediaStreamLike | null;
   /** 远端成员表 */
   peers: Record<string, PeerState>;
+  /**
+   * 参与者昵称：userId → 昵称
+   * ------------------------------------------------------------
+   * 服务端在 call.state 里下发，只用来展示。
+   * 缺失时页面回退到 id 尾号，不会空着。
+   */
+  names: Record<string, string>;
   /** 错误信息（用于 UI 提示） */
   error: string | null;
 }
@@ -127,6 +134,7 @@ const state: CallEngineState = {
   speaking: false,
   localStream: null,
   peers: {},
+  names: {},
   error: null,
 };
 
@@ -155,7 +163,7 @@ export function subscribeCallState(listener: (s: CallEngineState) => void): () =
 
 /** 通知所有订阅者 */
 function notify(): void {
-  const snapshot = { ...state, peers: { ...state.peers } };
+  const snapshot = { ...state, peers: { ...state.peers }, names: { ...state.names } };
   for (const l of listeners) {
     try {
       l(snapshot);
@@ -167,7 +175,24 @@ function notify(): void {
 
 /** 取当前状态快照（非组件代码用） */
 export function getCallState(): CallEngineState {
-  return { ...state, peers: { ...state.peers } };
+  return { ...state, peers: { ...state.peers }, names: { ...state.names } };
+}
+
+/**
+ * 更新参与者昵称表
+ * 服务端每次 call.state 都会带全量昵称，直接合并即可：
+ * 后到的覆盖先到的，成员变动也不会残留旧名字。
+ */
+export function updateParticipantNames(names: Record<string, string> | undefined): void {
+  if (!names) return;
+  let changed = false;
+  for (const [uid, name] of Object.entries(names)) {
+    if (typeof name === 'string' && name.length > 0 && state.names[uid] !== name) {
+      state.names[uid] = name;
+      changed = true;
+    }
+  }
+  if (changed) notify();
 }
 
 /** 重置状态 */
@@ -179,6 +204,7 @@ function resetState(): void {
   state.speaking = false;
   state.localStream = null;
   state.peers = {};
+  state.names = {};
   state.error = null;
   peerConnections.clear();
   notify();

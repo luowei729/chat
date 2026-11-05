@@ -57,8 +57,11 @@ UninstallDisplayIcon={app}\{#AppExeName}
 UninstallDisplayName={#AppName}
 
 [Languages]
-Name: "chinesesimp"; MessagesFile: "compiler:Default.isl"
-Name: "english"; MessagesFile: "compiler:Languages\English.isl"
+; 只依赖编译器自带的 Default.isl。
+; GitHub Actions 的 windows-latest 镜像里 Inno Setup 可能没装
+; Languages\English.isl（精简安装），引用它会让 ISCC 直接报
+; "Couldn't open include file"。中文用户场景下英文界面不是刚需。
+Name: "default"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked

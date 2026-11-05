@@ -194,11 +194,26 @@ jobs:
       - name: 构建安装包（Inno Setup）
         shell: pwsh
         run: |
-          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
-          if (-not (Test-Path $iscc)) {
-            Write-Error "Inno Setup 未安装，镜像可能变了"
+          # Inno Setup 在各镜像上的安装位置不一致（有的在
+          # Program Files (x86)\Inno Setup 6，有的在 Program Files），
+          # 也可能加了 PATH。逐个探测，全都找不到才报错。
+          $candidates = @(
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+            "$env:ProgramFiles\Inno Setup 6\ISCC.exe",
+            "${env:ProgramFiles(x86)}\Inno Setup 5\ISCC.exe"
+          )
+          $iscc = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $iscc) {
+            $cmd = Get-Command iscc.exe -ErrorAction SilentlyContinue
+            if ($cmd) { $iscc = $cmd.Source }
+          }
+          if (-not $iscc) {
+            Write-Error "在所有常见位置都找不到 ISCC.exe，镜像可能变了"
+            Write-Host "Program Files 下的候选目录："
+            Get-ChildItem "${env:ProgramFiles(x86)}" -Filter "Inno*" -ErrorAction SilentlyContinue | Select-Object FullName
             exit 1
           }
+          Write-Host "使用：$iscc"
           & $iscc "/DAppVersion=${{ steps.version.outputs.name }}" "windows\installer\chat.iss"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Get-ChildItem build\windows\installer\*.exe | Format-Table Name, Length

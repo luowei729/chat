@@ -72,7 +72,21 @@ jobs:
           ls deploy
 
       # ---------- 配置 SSH ----------
+      # 先检查 Secrets：没配置就明确跳过，而不是抛一个
+      # "Could not resolve hostname :" 的 rsync 错误让人排查半天。
+      - name: 检查部署凭据
+        id: guard
+        run: |
+          if [ -z "${{ secrets.SSH_HOST }}" ] || [ -z "${{ secrets.SSH_USER }}" ] || [ -z "${{ secrets.SSH_KEY }}" ]; then
+            echo "::warning::未配置 SSH_HOST / SSH_USER / SSH_KEY，跳过本次自动部署。"
+            echo "::warning::补齐 Secrets 后重新运行，或按 docs 手动部署。"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: 配置 SSH
+        if: steps.guard.outputs.skip != 'true'
         run: |
           set -euo pipefail
           mkdir -p ~/.ssh
@@ -90,6 +104,7 @@ jobs:
       # 直接把生产环境打挂（而且 .env 删了服务起不来）。
       # 所以只用覆盖式同步，并显式排除运行时目录。
       - name: 上传构建产物
+        if: steps.guard.outputs.skip != 'true'
         run: |
           set -euo pipefail
           rsync -avz \
@@ -102,6 +117,7 @@ jobs:
 
       # ---------- 写入环境变量 ----------
       - name: 写入环境变量
+        if: steps.guard.outputs.skip != 'true'
         run: |
           set -euo pipefail
           printf '%s' "${{ secrets.SERVER_ENV }}" > /tmp/server.env
@@ -115,6 +131,7 @@ jobs:
 
       # ---------- 安装依赖 + 迁移 + 重启 ----------
       - name: 安装运行时依赖并重启
+        if: steps.guard.outputs.skip != 'true'
         run: |
           set -euo pipefail
           ssh -p "${{ secrets.SSH_PORT || 22 }}" -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no \

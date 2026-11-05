@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  自适应图标（Android 8.0 / API 26 起）
+  ============================================================
+  为什么必须做：
+    1. Android 8+ 的桌面允许用户/厂商定制图标形状（圆形、方形、水滴、
+       松鼠等）。如果只提供传统 PNG，系统会把整张图缩小塞进圆里，
+       四周留一圈白边，看起来像十几年前的应用；
+    2. 各家 ROM（MIUI/ColorOS/OneUI）都按自适应规范渲染，
+       不做的话图标明显比其他应用小一圈。
+
+  规范：
+    · 画布 108x108dp，但只有中间 72x72dp 是安全区；
+    · 系统按需裁切成任意形状，超出的部分会被切掉——
+      所以背景必须铺满（用纯色即可），前景内容必须留在安全区内。
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_background" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+    <monochrome android:drawable="@mipmap/ic_notification" />
+</adaptive-icon>

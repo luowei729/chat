@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  圆形图标（android:roundIcon）
+  ============================================================
+  Android 7.1 引入了圆形启动器图标，部分 ROM 会优先取这个资源
+  （而不是 android:icon）来显示。
+  内容和方形一致：自适应图标本身会被系统裁切，这里无需区分。
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_background" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+    <monochrome android:drawable="@mipmap/ic_notification" />
+</adaptive-icon>

@@ -1,8 +1,30 @@
+// 必须显式 import：Kotlin DSL 里 `java` 是 Gradle 的 java 扩展，
+// 直接写 java.util.Properties() 会报 "Unresolved reference: util"。
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+}
+
+/**
+ * 读取签名配置
+ * ------------------------------------------------------------
+ * key.properties 与 chat-release.jks 都不进版本库：
+ *   本地开发时放在 android/key.properties；
+ *   CI 上由 workflow 从 GitHub Secrets 还原这两个文件。
+ *
+ * 读不到时回退到 debug 签名 —— 这样没配密钥的人
+ * （或 fork 仓库的贡献者）也能直接 flutter run，不会一上来就报错。
+ */
+val keystoreProperties = Properties()
+val keystorePropertiesFile = rootProject.file("key.properties")
+val hasReleaseSigning = keystorePropertiesFile.exists()
+
+if (hasReleaseSigning) {
+    keystorePropertiesFile.inputStream().use { keystoreProperties.load(it) }
 }
 
 android {
@@ -38,13 +60,63 @@ android {
         if (project.hasProperty("dualApp")) {
             applicationIdSuffix = ".b"
         }
+
+        /**
+         * 按 ABI 出包必须用 --split-per-abi
+         * ------------------------------------------------------------
+         * media_kit / flutter_webrtc 的 AAR 预置了
+         * x86_64 + arm64-v8a + armeabi-v7a 三套 .so。
+         *
+         * 这里**不能**用 defaultConfig.ndk.abiFilters 裁剪：
+         * Flutter 的 Gradle 插件在 afterEvaluate 阶段会执行
+         *   buildType.ndk.abiFilters.clear()
+         *   + 把 DEFAULT_PLATFORMS（全部 3 个）重新加回去，
+         * 于是我们的设置被无声覆盖，arm64 包里塞进三种架构（43MB→92MB）。
+         *
+         * 正确做法：flutter build apk --release --split-per-abi
+         * 走 splits.abi 分支，产出真正按 ABI 裁剪的独立 APK。
+         */
+    }
+
+    /**
+     * 签名配置
+     * ------------------------------------------------------------
+     * 必须写在 buildTypes 之前：Kotlin DSL 里 buildTypes 求值时
+     * 会 getByName("release")，此时 signingConfigs 必须已经注册好，
+     * 否则报 "SigningConfig with name 'release' not found"。
+     */
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = rootProject.file(keystoreProperties["storeFile"] as String)
+                storePassword = keystoreProperties["storePassword"] as String
+                keyAlias = keystoreProperties["keyAlias"] as String
+                keyPassword = keystoreProperties["keyPassword"] as String
+                // V1 兼容 Android 6 及以下；V2/V3 供 7+ 使用（校验更快更安全）
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
+            }
+        }
     }
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            /**
+             * 固定签名
+             * ------------------------------------------------------------
+             * 用同一个 keystore 签所有 release 包，
+             * 用户才能覆盖安装而不必卸载（卸载会丢本地缓存）。
+             *
+             * 之前用 debug 签名的问题：GitHub Actions 每次是全新 runner，
+             * ~/.android/debug.keystore 由工具链**随机生成**，
+             * 导致每次 CI 出包的签名都不同，互相装不上。
+             */
+            signingConfig = if (hasReleaseSigning) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
 
             // MobPush 把各厂商适配代码编进同一个 AAR 但不带依赖，
             // 不加这行 R8 会因「引用不存在的类」直接失败。

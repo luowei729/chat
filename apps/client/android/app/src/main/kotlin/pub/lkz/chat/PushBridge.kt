@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
 import com.mob.MobSDK
@@ -58,6 +59,12 @@ object PushBridge {
     /** 通知渠道 id：Android 8+ 必须自建渠道，否则通知不显示 */
     const val CHANNEL_ID = "chat_push"
 
+    /** 取号重试次数上限 */
+    private const val MAX_TOKEN_RETRY = 5
+
+    /** 退避间隔：覆盖冷启动 + 首次联网的时间窗口 */
+    private val RETRY_DELAYS_MS = longArrayOf(2_000, 4_000, 8_000, 16_000, 30_000)
+
     @Volatile
     private var initialized = false
 
@@ -94,12 +101,25 @@ object PushBridge {
 
         createNotificationChannel(app)
 
+        /**
+         * 这几步必须在主线程、在 Application.onCreate 里同步完成
+         * ------------------------------------------------------------
+         * MobSDK 内部有硬性校验：如果没在 Application.onCreate()
+         * 期间调用 init，会直接打印
+         *   E MobSDK: Please invoke MobSDK.init(context) method in your
+         *   application onCreate()
+         * 之后所有推送能力都不工作（取不到 registrationId）。
+         *
+         * 实测把这几步放到子线程后，虽然不再卡启动，
+         * 但 SDK 会判定「未初始化」，属于不可接受的降级 —— 所以放回主线程。
+         */
+        val t0 = SystemClock.elapsedRealtime()
         try {
-            // 声明这是 Flutter 宿主，Mob 后台会按渠道统计
             MobSDK.setChannel(MobProductTag(), MobSDK.CHANNEL_FLUTTER)
         } catch (t: Throwable) {
             Log.w(TAG, "setChannel 失败（忽略）", t)
         }
+        val t1 = SystemClock.elapsedRealtime()
 
         try {
             MobSDK.init(app, APP_KEY)
@@ -108,63 +128,98 @@ object PushBridge {
         } catch (t: Throwable) {
             Log.e(TAG, "MobSDK.init 失败", t)
         }
+        val t2 = SystemClock.elapsedRealtime()
 
-        try {
-            MobPush.initMobPush()
-            // 点击通知时拉起已存在的 MainActivity，而不是新建一个
-            MobPush.setClickNotificationToLaunchMainActivity(true)
-            MobPush.setNotifyIcon(R.mipmap.ic_launcher)
-        } catch (t: Throwable) {
-            Log.e(TAG, "MobPush.initMobPush 失败", t)
-        }
-
-        // 监听消息：自定义消息（透传）与通知点击都要回到 Dart
-        MobPush.addPushReceiver(object : MobPushReceiver {
-            override fun onCustomMessageReceive(
-                context: Context?,
-                message: MobPushCustomMessage?,
-            ) {
-                Log.d(TAG, "透传消息: ${message?.content}")
+        /**
+         * 这几步放到后台线程
+         * ------------------------------------------------------------
+         * initMobPush / addPushReceiver / getRegistrationId 都是
+         * 注册 + 网络取号，不参与「是否已初始化」的判定，
+         * 放后台可以避免占用首帧时间。
+         */
+        Thread({
+            try {
+                MobPush.initMobPush()
+                // 点击通知时拉起已存在的 MainActivity，而不是新建一个
+                MobPush.setClickNotificationToLaunchMainActivity(true)
+                /**
+                 * 通知栏小图标必须是**纯白剪影 + 透明背景**
+                 * ------------------------------------------------------------
+                 * Android 从 5.0 起会把通知小图标当作 alpha 蒙版，
+                 * 只用其透明度、然后用系统色填充。
+                 * 如果传彩色图标（比如 ic_launcher），
+                 * 所有不透明区域都会被涂成一个纯白方块 —— 用户看到的就是「白块」。
+                 *
+                 * 所以这里用专门生成的 ic_notification（白色 C 字形）。
+                 */
+                MobPush.setNotifyIcon(R.mipmap.ic_notification)
+            } catch (t: Throwable) {
+                Log.e(TAG, "MobPush.initMobPush 失败", t)
             }
+            val t3 = SystemClock.elapsedRealtime()
 
-            override fun onNotifyMessageReceive(
-                context: Context?,
-                message: MobPushNotifyMessage?,
-            ) {
-                Log.d(TAG, "收到通知: ${message?.title}")
-            }
+            // 监听消息：自定义消息（透传）与通知点击都要回到 Dart
+            MobPush.addPushReceiver(object : MobPushReceiver {
+                override fun onCustomMessageReceive(
+                    context: Context?,
+                    message: MobPushCustomMessage?,
+                ) {
+                    Log.d(TAG, "透传消息: ${message?.content}")
+                }
 
-            override fun onNotifyMessageOpenedReceive(
-                context: Context?,
-                message: MobPushNotifyMessage?,
-            ) {
-                // 点击通知：Mob 会把业务字段放在 extras 里
-                val extras = message?.extrasMap
-                val conv = extras?.get("conversationId")
-                val call = extras?.get("callId")
-                deliverClick(conv, call)
-            }
+                override fun onNotifyMessageReceive(
+                    context: Context?,
+                    message: MobPushNotifyMessage?,
+                ) {
+                    Log.d(TAG, "收到通知: ${message?.title}")
+                }
 
-            override fun onTagsCallback(
-                context: Context?,
-                tags: Array<out String>?,
-                action: Int,
-                resultCode: Int,
-            ) = Unit
+                override fun onNotifyMessageOpenedReceive(
+                    context: Context?,
+                    message: MobPushNotifyMessage?,
+                ) {
+                    // 点击通知：Mob 会把业务字段放在 extras 里
+                    val extras = message?.extrasMap
+                    val conv = extras?.get("conversationId")
+                    val call = extras?.get("callId")
+                    deliverClick(conv, call)
+                }
 
-            override fun onAliasCallback(
-                context: Context?,
-                alias: String?,
-                action: Int,
-                resultCode: Int,
-            ) = Unit
-        })
+                override fun onTagsCallback(
+                    context: Context?,
+                    tags: Array<out String>?,
+                    action: Int,
+                    resultCode: Int,
+                ) = Unit
 
-        refreshRegistrationId()
+                override fun onAliasCallback(
+                    context: Context?,
+                    alias: String?,
+                    action: Int,
+                    resultCode: Int,
+                ) = Unit
+            })
+
+            Log.i(
+                TAG,
+                "耗时 setChannel=${t1 - t0}ms init=${t2 - t1}ms " +
+                    "initPush=${t3 - t2}ms（同步=${t2 - t0}ms）",
+            )
+
+            refreshRegistrationId()
+        }, "mob-push-init").start()
     }
 
-    /** 主动拉一次 registrationId（异步，可能稍后才拿到） */
-    private fun refreshRegistrationId() {
+    /**
+     * 主动拉一次 registrationId
+     * ------------------------------------------------------------
+     * 为什么需要重试：
+     *   取号依赖网络与 Mob 侧配置下发，冷启动时往往还没就绪，
+     *   第一次回调大概率是 null。只拉一次的话，
+     *   用户在弱网/首次安装时可能一整天都拿不到令牌，收不到推送。
+     *   这里退避重试 5 次（2s/4s/8s/16s/30s），基本覆盖冷启动窗口。
+     */
+    private fun refreshRegistrationId(attempt: Int = 0) {
         try {
             MobPush.getRegistrationId(object : MobPushCallback<String> {
                 override fun onCallback(id: String?) {
@@ -176,9 +231,19 @@ object PushBridge {
                                 ch.invokeMethod("onPushToken", id)
                             }
                         }
-                    } else {
-                        Log.w(TAG, "registrationId 为空（未联网或厂商通道未配置）")
+                        return
                     }
+
+                    if (attempt >= MAX_TOKEN_RETRY) {
+                        Log.w(TAG, "registrationId 为空（未联网或厂商通道未配置）")
+                        return
+                    }
+                    val delayMs = RETRY_DELAYS_MS[attempt]
+                    Log.d(TAG, "registrationId 暂未就绪，${delayMs}ms 后重试")
+                    MainHandler.postDelayed(
+                        { refreshRegistrationId(attempt + 1) },
+                        delayMs,
+                    )
                 }
             })
         } catch (t: Throwable) {
@@ -294,4 +359,6 @@ private class MobProductTag : com.mob.commons.MobProduct {
 private object MainHandler {
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
     fun post(block: () -> Unit) = handler.post(block)
+    fun postDelayed(block: () -> Unit, delayMs: Long) =
+        handler.postDelayed(block, delayMs)
 }

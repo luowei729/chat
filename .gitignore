@@ -25,12 +25,18 @@ runtime/
 logs/
 
 # Android 原生工程生成物（保留源码，忽略构建输出）
-apps/app/android/.gradle/
-apps/app/android/build/
-apps/app/android/app/build/
-apps/app/android/local.properties
-apps/app/android/gradle/wrapper/gradle-wrapper.jar
-apps/app/android/app/src/main/assets/*.lynx.bundle
+apps/client/android/.gradle/
+apps/client/android/build/
+apps/client/android/app/build/
+apps/client/android/local.properties
+apps/client/android/gradle/wrapper/gradle-wrapper.jar
+
+# Android 签名密钥：绝不进版本库
+# （本地放 android/key.properties + android/*.jks；
+#   CI 上由 GitHub Secrets 还原）
+*.jks
+*.keystore
+key.properties
 
 # 桌面端
 apps/desktop/release/

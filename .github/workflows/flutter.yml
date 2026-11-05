@@ -1,0 +1,171 @@
+# ============================================================
+# Flutter 客户端构建（GitHub Actions）
+# ------------------------------------------------------------
+# 为什么放在 Actions：
+#   1. 服务器只有 2C/1.8G，本地编译会把服务打挂；
+#   2. iOS / macOS / Windows 只能在对应宿主上构建，
+#      本机是 Linux，物理上做不到。
+#
+# 目标平台：
+#   Android（APK）、iOS（未签名 app）、macOS、Windows
+#
+# 鸿蒙（HarmonyOS / OpenHarmony）：
+#   需要 OpenHarmony SDK + DevEco 工具链，GitHub 托管机没有授权，
+#   因此在 CI 里只做静态检查；打包步骤见 apps/client/README.md。
+# ============================================================
+name: Flutter Client
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/client/**'
+      - '.github/workflows/flutter.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: flutter-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: '3.35.7'
+
+jobs:
+  # ---------------- Android ----------------
+  android:
+    name: Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: apps/client
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: 依赖
+        run: flutter pub get
+
+      - name: 静态分析
+        run: flutter analyze
+
+      - name: 构建 APK（release，多 ABI）
+        run: flutter build apk --release
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: chat-android
+          path: apps/client/build/app/outputs/flutter-apk/*.apk
+          retention-days: 30
+
+  # ---------------- iOS ----------------
+  ios:
+    name: iOS (未签名)
+    runs-on: macos-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: apps/client
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: 依赖
+        run: flutter pub get
+
+      # 没有 Apple 开发者证书，只能构建未签名产物用于验证可编译性；
+      # 上架需要配置签名证书与 provisioning profile。
+      - name: 构建 iOS（不签名）
+        run: flutter build ios --release --no-codesign
+
+      - name: 打包为 zip
+        run: |
+          cd build/ios/iphoneos
+          zip -qry "$GITHUB_WORKSPACE/chat-ios-unsigned.zip" Runner.app
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chat-ios
+          path: chat-ios-unsigned.zip
+          retention-days: 30
+
+  # ---------------- macOS ----------------
+  macos:
+    name: macOS
+    runs-on: macos-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: apps/client
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+      - run: flutter build macos --release
+
+      - name: 打包
+        run: |
+          cd build/macos/Build/Products/Release
+          zip -qry "$GITHUB_WORKSPACE/chat-macos.zip" chat.app
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chat-macos
+          path: chat-macos.zip
+          retention-days: 30
+
+  # ---------------- Windows ----------------
+  windows:
+    name: Windows
+    runs-on: windows-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: apps/client
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+      - run: flutter build windows --release
+
+      - name: 打包
+        shell: pwsh
+        run: Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath "$env:GITHUB_WORKSPACE\chat-windows.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chat-windows
+          path: chat-windows.zip
+          retention-days: 30

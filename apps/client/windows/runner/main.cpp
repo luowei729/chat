@@ -1,8 +1,11 @@
-// windows.h 必须最先包含：shellapi.h 依赖它定义的类型（HWND/BOOL 等），
-// 顺序反了在部分 Windows SDK 上会直接编译失败。
+// windows.h 必须最先包含：shellapi.h / shobjidl.h 都依赖它定义的类型
+// （HWND/BOOL/GUID 等），顺序反了在部分 Windows SDK 上会直接编译失败。
 #include <windows.h>
 
-#include <shellapi.h>  // SetCurrentProcessExplicitAppUserModelID
+// SetCurrentProcessExplicitAppUserModelID 声明在 shobjidl.h，
+// 只包含 shellapi.h 会报 C2039/C3861（identifier not found）。
+#include <shobjidl.h>
+#include <shellapi.h>  // 命令行 / 其他 Shell 辅助函数
 
 #include <flutter/dart_project.h>
 #include <flutter/flutter_view_controller.h>

@@ -632,9 +632,6 @@ class ChatStore extends ChangeNotifier {
     unawaited(_notifyDesktop(conversationId, incoming));
   }
 
-  /// 通知所有订阅者
-  void _notifyAll() => notifyListeners();
-
   /// 同步托盘悬停提示（Windows）
   ///
   /// 托盘图标是窗口隐藏时用户唯一能看到的信息入口，

@@ -45,26 +45,23 @@ bool IsWindowForeground(HWND hwnd) {
 }
 
 // 通道传过来的是 UTF-8 字符串，GDI 需要宽字符
+//
+// 注意：Flutter 的 EncodableValue 在新版只包含 std::string（UTF-8），
+// 已经没有 std::u16string。写成 get_if<std::u16string> 会报
+// "T to occur exactly once" 的 static_assert 编译错误。
 std::wstring ToWide(const flutter::EncodableValue* value) {
   if (!value) return std::wstring();
-  if (const auto* str = std::get_if<std::string>(value)) {
-    if (str->empty()) return std::wstring();
-    const int size = ::MultiByteToWideChar(CP_UTF8, 0, str->c_str(),
-                                           static_cast<int>(str->size()),
-                                           nullptr, 0);
-    if (size <= 0) return std::wstring();
-    std::wstring wide(static_cast<size_t>(size), L'\0');
-    ::MultiByteToWideChar(CP_UTF8, 0, str->c_str(),
-                          static_cast<int>(str->size()), wide.data(), size);
-    return wide;
-  }
-  if (const auto* wstr = std::get_if<std::u16string>(value)) {
-    std::wstring wide;
-    wide.reserve(wstr->size());
-    for (char16_t ch : *wstr) wide.push_back(static_cast<wchar_t>(ch));
-    return wide;
-  }
-  return std::wstring();
+  const auto* str = std::get_if<std::string>(value);
+  if (!str || str->empty()) return std::wstring();
+
+  const int size = ::MultiByteToWideChar(CP_UTF8, 0, str->c_str(),
+                                         static_cast<int>(str->size()),
+                                         nullptr, 0);
+  if (size <= 0) return std::wstring();
+  std::wstring wide(static_cast<size_t>(size), L'\0');
+  ::MultiByteToWideChar(CP_UTF8, 0, str->c_str(),
+                        static_cast<int>(str->size()), wide.data(), size);
+  return wide;
 }
 
 }  // namespace

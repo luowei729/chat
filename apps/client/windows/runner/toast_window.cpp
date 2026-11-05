@@ -173,10 +173,7 @@ void ShowToastWindow(HWND owner, const std::wstring& title,
   RECT work = {};
   SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0);
 
-  const int dpi_ref = static_cast<int>(GetDpiForSystem ? 96 : 96);
-  (void)dpi_ref;
-
-  // 先用 96 DPI 估算宽度，创建后再按实际 DPI 调整，避免依赖创建前的 DPI。
+  // 先用 96 DPI 估算尺寸，创建窗口后再按实际 DPI 修正
   int width = kToastWidthDip;
   int height = kToastHeightDip;
   int margin = kMarginDip;
